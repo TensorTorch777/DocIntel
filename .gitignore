@@ -1,0 +1,76 @@
+# --- Environment & secrets (never commit) ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env.local
+!.env.example
+!frontend/.env.local.example
+*.pem
+*.key
+credentials.json
+secrets/
+.secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Node / frontend ---
+node_modules/
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# --- Databases & vector indexes ---
+*.db
+*.sqlite
+*.sqlite3
+chroma/
+.chroma/
+faiss_index/
+vector_store/
+embeddings/
+
+# --- Runtime data & uploads ---
+data/
+uploaded_docs/
+cache/
+tmp/
+logs/
+
+# --- Model / binary artifacts ---
+*.pt
+*.bin
+*.onnx
+*.safetensors
+*.ckpt
+*.h5
+*.pkl
+*.pickle
+
+# --- Documents (user uploads) ---
+*.pdf
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Misc ---
+.vercel/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.js
+.yarn/install-state.gz

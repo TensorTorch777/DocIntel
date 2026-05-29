@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-midnight-ink: #202020;
+  --color-cloud-canvas: #f5f5f5;
+  --color-paper-white: #ffffff;
+  --color-muted-ash: #333333;
+  --color-ghost-border: #f7f5fd;
+  --color-electric-violet: #5757f8;
+  --page-max-width: 1400px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cloud-canvas text-midnight-ink font-body font-medium antialiased;
+}
+
+::selection {
+  background: #5757f833;
+  color: #202020;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Markdown in chat */
+.prose-docintel {
+  @apply text-body text-muted-ash leading-relaxed;
+}
+
+.prose-docintel p {
+  @apply mb-4 last:mb-0;
+}
+
+.prose-docintel strong {
+  @apply text-midnight-ink font-bold;
+}
+
+.prose-docintel code {
+  @apply rounded bg-cloud-canvas px-1.5 py-0.5 text-caption font-body text-midnight-ink;
+}
+
+.prose-docintel pre {
+  @apply my-4 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-ghost-border bg-cloud-canvas p-4 text-caption text-midnight-ink;
+}
+
+.prose-docintel pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+
+.prose-docintel blockquote {
+  @apply my-4 border-l-4 border-electric-violet/40 bg-cloud-canvas py-2 pl-4 pr-2 italic text-muted-ash;
+}
+
+.prose-docintel ul {
+  @apply mb-4 list-disc pl-5;
+}
+
+.prose-docintel ol {
+  @apply mb-4 list-decimal pl-5;
+}
