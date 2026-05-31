@@ -45,12 +45,27 @@ class Settings(BaseSettings):
     enable_query_rewrite_llm: bool = False
     entity_boost_weight: float = 0.08
     enable_answer_verification: bool = True
+    verification_cache_size: int = 512
+    verify_medium_risk: bool = True
+    verify_high_risk: bool = True
+    skip_verification_authoritative_definitions: bool = True
     enable_answer_rewrite: bool = True
     enable_evidence_sufficiency_gate: bool = True
+    enable_procedural_reasoning: bool = True
+    procedural_max_steps: int = 10
+    procedural_relevance_threshold: float = 0.08
     enable_register_definition_resolver: bool = True
     max_pinned_definition_chunks: int = 3
     definitional_boost_weight: float = 0.12
     unsupported_claim_threshold: float = 0.30
+
+    # Evidence sufficiency calibration (weighted coverage thresholds)
+    coverage_weight_definition: float = 0.35
+    coverage_weight_behavior: float = 0.25
+    coverage_weight_exceptions: float = 0.20
+    coverage_weight_interactions: float = 0.20
+    coverage_confidence_high: float = 0.80
+    coverage_confidence_medium: float = 0.50
 
     # Embeddings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

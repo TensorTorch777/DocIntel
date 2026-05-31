@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 class ChatTask(str, Enum):
@@ -110,12 +110,14 @@ class VerificationResult(BaseModel):
 
 
 class EvidenceCoverage(BaseModel):
-    """Per-category evidence coverage from retrieval."""
+    """Per-category evidence coverage scores (0.0–1.0) from retrieval."""
 
-    definition: bool = False
-    behavior: bool = False
-    exceptions: bool = False
-    interactions: bool = False
+    definition: float = 0.0
+    behavior: float = 0.0
+    exceptions: float = 0.0
+    interactions: float = 0.0
+    query_relevance: float = 0.0
+    total_weighted: float = 0.0
     missing_categories: list[str] = Field(default_factory=list)
 
 
@@ -124,6 +126,7 @@ class EvidenceSufficiency(BaseModel):
 
     sufficient: bool
     confidence: str = "medium"  # high | medium | low
+    coverage_score: float = 0.0
     coverage: EvidenceCoverage = Field(default_factory=EvidenceCoverage)
     message: str | None = None
     entity_mentions: int = 0
@@ -188,43 +191,155 @@ class SSEEvent(BaseModel):
     data: dict[str, Any]
 
 
-class BenchmarkCase(BaseModel):
-    """Single benchmark test case."""
+class BenchmarkExpected(BaseModel):
+    """Expected answer constraints for a benchmark case."""
 
+    must_contain: list[str] = Field(default_factory=list)
+    must_not_contain: list[str] = Field(default_factory=list)
+
+
+class BenchmarkCaseDefinition(BaseModel):
+    """Single benchmark test case from benchmark_cases.json."""
+
+    id: str
+    category: str
     query: str
-    expected_terms: list[str] = Field(default_factory=list)
-    forbidden_claims: list[str] = Field(default_factory=list)
-    requires_json: bool = False
+    expected: BenchmarkExpected = Field(default_factory=BenchmarkExpected)
+    expected_chunks: list[str] = Field(default_factory=list)
+    should_abstain: bool = False
+    expected_ordered_steps: list[str] | None = None
+
+
+class BenchmarkDataset(BaseModel):
+    """Loaded benchmark dataset."""
+
+    version: str = "1.0"
+    description: str = ""
+    categories: list[str] = Field(default_factory=list)
+    case_count: int = 0
+    cases: list[BenchmarkCaseDefinition] = Field(default_factory=list)
 
 
 class BenchmarkRequest(BaseModel):
     """Run benchmark suite against a document."""
 
     document_id: str
-    cases: list[BenchmarkCase] | None = None
+    cases_path: str | None = None
+    categories: list[str] | None = None
+    case_ids: list[str] | None = None
+    limit: int | None = Field(default=None, ge=1, description="Max cases to run")
+    modes: list[str] | None = Field(
+        default=None,
+        description="Pipeline modes: vector_only, vector_bm25, hybrid_rerank, full",
+    )
+    compare_baselines: bool = Field(
+        default=False,
+        description="Run all four pipeline modes for side-by-side comparison",
+    )
+    top_k: int | None = Field(default=None, ge=1, le=20)
+    generate_plots: bool = Field(default=True)
+    output_dir: str | None = None
+    dashboard_case_limit: int = Field(default=50, ge=1, le=500)
 
 
-class BenchmarkCaseResult(BaseModel):
-    """Results for one benchmark case."""
+class BenchmarkRunSummary(BaseModel):
+    """Aggregate benchmark metrics."""
 
+    aggregate_score: float = 0.0
+    retrieval_recall_at_k: float = 0.0
+    mrr: float = 0.0
+    ndcg_at_k: float = 0.0
+    definition_accuracy: float = 0.0
+    hallucination_rate: float = 0.0
+    unsupported_claim_ratio: float = 0.0
+    abstention_precision: float = 0.0
+    abstention_recall: float = 0.0
+    stepwise_accuracy: float = 0.0
+    ordered_step_accuracy: float = 0.0
+    missing_step_rate: float = 0.0
+    extra_step_rate: float = 0.0
+    step_precision: float = 0.0
+    step_recall: float = 0.0
+    citation_accuracy: float = 0.0
+    citation_coverage_per_sentence: float = 0.0
+    definition_retrieved_rate: float = 0.0
+    definition_selected_rate: float = 0.0
+    definition_used_rate: float = 0.0
+    definition_correct_rate: float = 0.0
+    retrieval_ms: float = 0.0
+    rerank_ms: float = 0.0
+    generation_ms: float = 0.0
+    verification_ms: float = 0.0
+    total_ms: float = 0.0
+
+
+class BenchmarkCaseResultRow(BaseModel):
+    """Detailed result for one benchmark case."""
+
+    id: str
+    category: str
     query: str
-    retrieval_hit: bool
-    matched_terms: list[str] = Field(default_factory=list)
-    grounding_supported: bool
-    hallucination_risk: str
-    format_compliant: bool
-    citation_count: int
-    answer_preview: str
-    retrieval_query: str = ""
+    pipeline_mode: str = "full"
+    should_abstain: bool = False
+    abstained: bool = False
+    abstention_correct: bool | None = None
+    hallucination: bool = False
+    retrieval_recall_at_k: float = 0.0
+    mrr: float = 0.0
+    ndcg_at_k: float = 0.0
+    definition_accuracy: float | None = None
+    unsupported_claim_ratio: float = 0.0
+    stepwise_accuracy: float | None = None
+    citation_accuracy: float = 0.0
+    must_contain_score: float = 0.0
+    must_not_violations: int = 0
+    retrieval_confidence: str = "unknown"
+    retrieval_ms: float = 0.0
+    rerank_ms: float = 0.0
+    generation_ms: float = 0.0
+    verification_ms: float = 0.0
+    total_ms: float = 0.0
+    answer_preview: str = ""
 
 
 class BenchmarkResponse(BaseModel):
-    """Aggregate benchmark results."""
+    """Comprehensive benchmark results."""
 
     document_id: str
+    timestamp: str
     case_count: int
-    retrieval_accuracy: float
-    grounding_score: float
-    format_compliance: float
-    avg_citations: float
-    results: list[BenchmarkCaseResult]
+    modes: list[str] = Field(default_factory=list)
+    summary: BenchmarkRunSummary
+    by_category: dict[str, dict[str, float]] = Field(default_factory=dict)
+    mode_comparison: dict[str, dict[str, float]] = Field(default_factory=dict)
+    best_cases: list[dict[str, Any]] = Field(default_factory=list)
+    worst_cases: list[dict[str, Any]] = Field(default_factory=list)
+    plot_files: list[str] = Field(default_factory=list)
+    results_json: str = ""
+    results_csv: str = ""
+    case_results: list[dict[str, Any]] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def retrieval_accuracy(self) -> float:
+        return self.summary.retrieval_recall_at_k
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def grounding_score(self) -> float:
+        return 1.0 - self.summary.hallucination_rate
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def format_compliance(self) -> float:
+        return self.summary.citation_accuracy
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def avg_citations(self) -> float:
+        return self.summary.citation_accuracy
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def results(self) -> list[dict[str, Any]]:
+        return self.case_results

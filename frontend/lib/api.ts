@@ -67,33 +67,105 @@ export async function detectAnomalies(
   return handleResponse<AnomalyResponse>(res);
 }
 
+export interface BenchmarkRunSummary {
+  aggregate_score: number;
+  retrieval_recall_at_k: number;
+  mrr: number;
+  ndcg_at_k: number;
+  definition_accuracy: number;
+  hallucination_rate: number;
+  unsupported_claim_ratio: number;
+  abstention_precision: number;
+  abstention_recall: number;
+  stepwise_accuracy: number;
+  citation_accuracy: number;
+  retrieval_ms: number;
+  rerank_ms: number;
+  generation_ms: number;
+  verification_ms: number;
+  total_ms: number;
+}
+
+export interface BenchmarkCaseResultRow {
+  id: string;
+  category: string;
+  query: string;
+  pipeline_mode?: string;
+  should_abstain?: boolean;
+  abstained?: boolean;
+  hallucination?: boolean;
+  retrieval_recall_at_k: number;
+  retrieval_confidence?: string;
+  must_contain_score?: number;
+  total_ms: number;
+  answer_preview: string;
+}
+
 export interface BenchmarkResponse {
   document_id: string;
+  timestamp: string;
   case_count: number;
-  retrieval_accuracy: number;
-  grounding_score: number;
-  format_compliance: number;
-  avg_citations: number;
-  results: Array<{
+  modes: string[];
+  summary: BenchmarkRunSummary;
+  by_category: Record<string, Record<string, number>>;
+  mode_comparison: Record<string, Record<string, number>>;
+  best_cases: Array<{
+    id: string;
     query: string;
-    retrieval_hit: boolean;
-    matched_terms: string[];
-    grounding_supported: boolean;
-    hallucination_risk: string;
-    format_compliant: boolean;
-    citation_count: number;
-    answer_preview: string;
-    retrieval_query: string;
+    category: string;
+    score: number;
   }>;
+  worst_cases: Array<{
+    id: string;
+    query: string;
+    category: string;
+    score: number;
+  }>;
+  plot_files: string[];
+  results_json: string;
+  results_csv: string;
+  case_results: BenchmarkCaseResultRow[];
+  retrieval_accuracy?: number;
+  grounding_score?: number;
+}
+
+export interface BenchmarkDataset {
+  version: string;
+  description: string;
+  categories: string[];
+  case_count: number;
+}
+
+export interface BenchmarkRunOptions {
+  limit?: number;
+  compare_baselines?: boolean;
+  categories?: string[];
+  generate_plots?: boolean;
+}
+
+export async function getBenchmarkDataset(): Promise<BenchmarkDataset> {
+  const res = await fetch(`${API_BASE}/benchmark/dataset`);
+  return handleResponse<BenchmarkDataset>(res);
+}
+
+export function benchmarkPlotUrl(filename: string): string {
+  return `${API_BASE}/benchmark/plots/${filename}`;
 }
 
 export async function runBenchmark(
-  documentId: string
+  documentId: string,
+  options: BenchmarkRunOptions = {}
 ): Promise<BenchmarkResponse> {
   const res = await fetch(`${API_BASE}/benchmark/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ document_id: documentId }),
+    body: JSON.stringify({
+      document_id: documentId,
+      limit: options.limit,
+      compare_baselines: options.compare_baselines ?? false,
+      categories: options.categories,
+      generate_plots: options.generate_plots ?? true,
+    }),
   });
   return handleResponse<BenchmarkResponse>(res);
 }

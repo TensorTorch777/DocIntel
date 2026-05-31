@@ -74,3 +74,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnp.js
 .yarn/install-state.gz
+
+# --- Benchmark runtime outputs ---
+benchmark/results/
+benchmark/plots/*.png
+benchmark/plots/manifest.json
+benchmark/reports/plots/
+*.log
+/tmp/

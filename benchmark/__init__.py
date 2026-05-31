@@ -1,0 +1,1 @@
+"""DocIntel RAG benchmark framework."""

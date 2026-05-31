@@ -3,10 +3,12 @@
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 from app.config import Settings
+from benchmark.pipeline import PipelineConfig, PipelineMode
 from app.models.schemas import (
     AnomalyFlag,
     AnomalyResponse,
@@ -16,8 +18,15 @@ from app.models.schemas import (
     UnsupportedClaim,
     VerificationResult,
 )
+from app.services.answer_verification import AnswerVerificationService
 from app.services.llm import LLMService
-from app.services.retrieval import RetrievalService, format_context
+from app.services.procedural_reasoning import (
+    PROCEDURAL_SYSTEM_PROMPT,
+    build_procedural_user_prompt,
+    generate_procedural_answer_from_evidence,
+    is_procedural_query,
+)
+from app.services.retrieval import RetrievalResult, RetrievalService, format_context
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +87,8 @@ Rules:
 - unsupported_claims may be strings OR objects with claim/reason/evidence
 - hallucination_risk: low | medium | high"""
 
+# Legacy alias kept for imports; verification prompts live in answer_verification.py
+
 SUMMARIZE_SYSTEM_PROMPT = """You are DocIntel summarizing a technical manual.
 
 Rules:
@@ -105,6 +116,7 @@ class RAGService:
         self._settings = settings
         self._retrieval = retrieval_service
         self._llm = llm_service
+        self._verifier = AnswerVerificationService(settings, llm_service)
 
     async def stream_chat_events(
         self,
@@ -151,18 +163,29 @@ class RAGService:
             temperature = self._temperature_for_query(query, task)
 
             answer_parts: list[str] = []
-            async for token in self._llm.stream_completion(
-                system_prompt, user_prompt, temperature=temperature
-            ):
-                answer_parts.append(token)
-                yield ("token", {"content": token})
-
-            answer = "".join(answer_parts)
+            if task == ChatTask.QA and self._settings.enable_procedural_reasoning and is_procedural_query(query):
+                answer = await self._generate_procedural_answer(query, result)
+                yield ("token", {"content": answer})
+            else:
+                async for token in self._llm.stream_completion(
+                    system_prompt, user_prompt, temperature=temperature
+                ):
+                    answer_parts.append(token)
+                    yield ("token", {"content": token})
+                answer = "".join(answer_parts)
             final_answer = answer
             verification = None
 
             if self._settings.enable_answer_verification and answer.strip():
-                verification = await self._verify_answer(context, query, answer)
+                do_verify, skip_reason = self._verifier.should_verify(
+                    query, answer, result.chunks, gated=False,
+                    procedural=is_procedural_query(query),
+                )
+                if do_verify:
+                    verification = await self._verifier.verify(
+                        context, query, answer, chunks=result.chunks,
+                        lightweight=self._verifier.assess_risk(query, answer, result.chunks) == "medium",
+                    )
                 if verification is not None:
                     try:
                         final_answer, verification = await self._apply_verification_actions(
@@ -222,18 +245,29 @@ class RAGService:
             return result.sufficiency.message or "Insufficient retrieved evidence."
 
         _, user_prompt = self._build_prompts(ChatTask.QA, query, result.context)
-        answer = await self._llm.complete(
-            QA_SYSTEM_PROMPT,
-            user_prompt,
-            temperature=self._temperature_for_query(query, ChatTask.QA),
-        )
+        if self._settings.enable_procedural_reasoning and is_procedural_query(query):
+            answer = await self._generate_procedural_answer(query, result)
+        else:
+            answer = await self._llm.complete(
+                QA_SYSTEM_PROMPT,
+                user_prompt,
+                temperature=self._temperature_for_query(query, ChatTask.QA),
+            )
         if self._settings.enable_answer_verification:
             try:
-                v = await self._verify_answer(result.context, query, answer)
-                if v is not None:
-                    answer, _ = await self._apply_verification_actions(
-                        result.context, query, answer, v
+                do_verify, _ = self._verifier.should_verify(
+                    query, answer, result.chunks, gated=False,
+                    procedural=is_procedural_query(query),
+                )
+                if do_verify:
+                    v = await self._verifier.verify(
+                        result.context, query, answer, chunks=result.chunks,
+                        lightweight=self._verifier.assess_risk(query, answer, result.chunks) == "medium",
                     )
+                    if v is not None:
+                        answer, _ = await self._apply_verification_actions(
+                            result.context, query, answer, v
+                        )
             except Exception:
                 logger.warning(
                     "Answer verification/rewrite failed; returning original answer",
@@ -286,18 +320,139 @@ class RAGService:
         document_id: str,
         query: str,
         top_k: int | None = None,
+        pipeline: PipelineConfig | None = None,
     ):
         """Expose retrieval for benchmark/debug without generation."""
-        return await self._retrieval.retrieve(document_id, query, top_k)
+        return await self._retrieval.retrieve(
+            document_id, query, top_k, pipeline=pipeline
+        )
+
+    async def evaluate_query(
+        self,
+        document_id: str,
+        query: str,
+        pipeline: PipelineConfig | None = None,
+        top_k: int | None = None,
+    ) -> dict[str, Any]:
+        """Run retrieve → answer → verify for benchmark evaluation."""
+        cfg = pipeline or PipelineConfig.from_mode(PipelineMode.FULL)
+
+        t_start = time.perf_counter()
+        result = await self._retrieval.retrieve(
+            document_id, query, top_k, pipeline=cfg
+        )
+        retrieval_ms = result.timings.retrieval_ms
+        rerank_ms = result.timings.rerank_ms
+
+        gated = False
+        answer = ""
+        generation_ms = 0.0
+        verification_ms = 0.0
+        verification: VerificationResult | None = None
+        verification_skipped = False
+        verification_skip_reason = ""
+
+        if cfg.evidence_gate and not result.sufficiency.sufficient:
+            gated = True
+            answer = result.sufficiency.message or "Insufficient retrieved evidence."
+        else:
+            t_gen = time.perf_counter()
+            if self._settings.enable_procedural_reasoning and is_procedural_query(query):
+                answer = await self._generate_procedural_answer(query, result)
+            else:
+                _, user_prompt = self._build_prompts(ChatTask.QA, query, result.context)
+                answer = await self._llm.complete(
+                    QA_SYSTEM_PROMPT,
+                    user_prompt,
+                    temperature=self._temperature_for_query(query, ChatTask.QA),
+                )
+            generation_ms = (time.perf_counter() - t_gen) * 1000.0
+
+            if cfg.verification and answer.strip():
+                procedural = is_procedural_query(query)
+                do_verify, verification_skip_reason = self._verifier.should_verify(
+                    query, answer, result.chunks, gated=False, procedural=procedural,
+                )
+                if do_verify:
+                    t_ver = time.perf_counter()
+                    risk = self._verifier.assess_risk(query, answer, result.chunks)
+                    verification = await self._verifier.verify(
+                        result.context, query, answer, chunks=result.chunks,
+                        lightweight=risk == "medium",
+                    )
+                    if verification is not None and cfg.rewrite:
+                        try:
+                            answer, verification = await self._apply_verification_actions(
+                                result.context, query, answer, verification
+                            )
+                        except Exception:
+                            logger.warning("Benchmark verification actions failed", exc_info=True)
+                    verification_ms = (time.perf_counter() - t_ver) * 1000.0
+                else:
+                    verification_skipped = True
+
+        total_ms = (time.perf_counter() - t_start) * 1000.0
+
+        return {
+            "answer": answer,
+            "gated": gated,
+            "retrieved_chunks": [c.text for c in result.chunks],
+            "chunk_ids": [c.chunk_id for c in result.chunks],
+            "sources": [s.model_dump() for s in result.sources],
+            "rerank_scores": [
+                float(c.metadata.get("rerank_score", c.score)) for c in result.chunks
+            ],
+            "retrieval_confidence": result.sufficiency.confidence,
+            "evidence_sufficiency": result.sufficiency.model_dump(),
+            "verification": verification.model_dump() if verification else None,
+            "verification_skipped": verification_skipped,
+            "verification_skip_reason": verification_skip_reason,
+            "merged_retrieved_chunks": [
+                c.get("excerpt", "")
+                for c in result.debug.to_dict().get("merged_candidates", [])
+            ],
+            "retrieval_debug": result.debug.to_dict(),
+            "latency": {
+                "retrieval_ms": retrieval_ms,
+                "rerank_ms": rerank_ms,
+                "generation_ms": generation_ms,
+                "verification_ms": verification_ms,
+                "total_ms": total_ms,
+            },
+        }
 
     async def verify_answer_public(
         self, context: str, query: str, answer: str
     ) -> VerificationResult | None:
-        return await self._verify_answer(context, query, answer)
+        return await self._verifier.verify(context, query, answer)
+
+    async def _verify_answer(
+        self, context: str, query: str, answer: str
+    ) -> VerificationResult | None:
+        """Backward-compatible wrapper."""
+        return await self._verifier.verify(context, query, answer)
 
     @staticmethod
     def count_citations(text: str) -> int:
         return len(_CITATION_PATTERN.findall(text))
+
+    async def _generate_procedural_answer(self, query: str, result: RetrievalResult) -> str:
+        """Procedural path: extract, query-filter, order steps, format with citations."""
+        direct, ordered = generate_procedural_answer_from_evidence(
+            result.chunks,
+            query,
+            max_steps=self._settings.procedural_max_steps,
+            relevance_threshold=self._settings.procedural_relevance_threshold,
+        )
+        if direct:
+            return direct
+
+        user_prompt = build_procedural_user_prompt(query, result.context, ordered)
+        return await self._llm.complete(
+            PROCEDURAL_SYSTEM_PROMPT,
+            user_prompt,
+            temperature=0.0,
+        )
 
     @staticmethod
     def _build_prompts(task: ChatTask, query: str, context: str) -> tuple[str, str]:
@@ -375,20 +530,6 @@ class RAGService:
         return await self._llm.complete(
             CONSERVATIVE_QA_PROMPT, user_prompt, temperature=0.0
         )
-
-    async def _verify_answer(
-        self, context: str, query: str, answer: str
-    ) -> VerificationResult | None:
-        try:
-            raw = await self._llm.complete(
-                VERIFY_SYSTEM_PROMPT,
-                f"Question:\n{query}\n\nSources:\n{context}\n\nAnswer:\n{answer}",
-                temperature=0.0,
-            )
-            return self._parse_verification(raw)
-        except Exception:
-            logger.warning("Answer verification failed; skipping rewrite", exc_info=True)
-            return None
 
     async def _rewrite_answer(
         self,

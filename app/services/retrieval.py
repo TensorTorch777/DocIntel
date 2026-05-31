@@ -1,10 +1,12 @@
 """Hybrid retrieval: query rewrite → vector + BM25 → RRF → entity boost → rerank."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import Settings
+from benchmark.pipeline import PipelineConfig
 from app.models.schemas import EvidenceCoverage, EvidenceSufficiency, RetrievedSource
 from app.services.bm25_store import BM25Store
 from app.services.definitional_boost import apply_definitional_boost
@@ -62,6 +64,14 @@ class RetrievalDebugInfo:
 
 
 @dataclass
+class RetrievalTimings:
+    """Stage latencies in milliseconds."""
+
+    retrieval_ms: float = 0.0
+    rerank_ms: float = 0.0
+
+
+@dataclass
 class RetrievalResult:
     """Final retrieval output."""
 
@@ -70,6 +80,7 @@ class RetrievalResult:
     sources: list[RetrievedSource]
     debug: RetrievalDebugInfo
     sufficiency: EvidenceSufficiency
+    timings: RetrievalTimings = field(default_factory=RetrievalTimings)
 
 
 def _rrf_merge(
@@ -185,11 +196,24 @@ class RetrievalService:
         document_id: str,
         user_query: str,
         top_k: int | None = None,
+        pipeline: PipelineConfig | None = None,
     ) -> RetrievalResult:
         """
         Full pipeline:
         definition resolver → pinned chunks + vector + BM25 → RRF → boost → rerank → pin merge
         """
+        t0 = time.perf_counter()
+        timings = RetrievalTimings()
+
+        cfg = pipeline
+        use_hybrid = cfg.hybrid if cfg else self._settings.hybrid_retrieval_enabled
+        use_rerank = cfg.rerank if cfg else self._settings.reranker_enabled
+        use_def_resolver = (
+            cfg.definition_resolver if cfg else self._settings.enable_register_definition_resolver
+        )
+        use_entity_boost = cfg.entity_boost if cfg else True
+        use_def_boost = cfg.definitional_boost if cfg else True
+
         final_k = top_k or self._settings.retrieval_top_k
         candidate_k = max(final_k, self._settings.retrieval_candidate_k)
 
@@ -213,7 +237,7 @@ class RetrievalService:
         # 1. Register definition resolver (scan full BM25 corpus)
         pinned: list[RetrievedChunk] = []
         pinned_debug: list[RetrievedSource] = []
-        if self._settings.enable_register_definition_resolver and register_entities:
+        if use_def_resolver and register_entities:
             corpus = self._bm25.get_all_chunks(document_id)
             if corpus:
                 def_matches = resolve_authoritative_definitions(
@@ -244,7 +268,7 @@ class RetrievalService:
 
         # BM25 retrieval
         bm25_chunks: list[RetrievedChunk] = []
-        if self._settings.hybrid_retrieval_enabled:
+        if use_hybrid:
             bm25_chunks = self._bm25.search(document_id, retrieval_query, top_k=candidate_k)
 
         # RRF merge
@@ -259,23 +283,34 @@ class RetrievalService:
             merged = pinned + [c for c in merged if c.chunk_id not in pinned_ids]
 
         # Entity boost
-        boosted = apply_entity_boost(
-            merged,
-            entities,
-            boost_per_hit=self._settings.entity_boost_weight,
-        )
+        boosted = merged
+        if use_entity_boost:
+            boosted = apply_entity_boost(
+                merged,
+                entities,
+                boost_per_hit=self._settings.entity_boost_weight,
+            )
 
         # Definitional boost for register/flag queries
-        boosted = apply_definitional_boost(
-            boosted,
-            core_query,
-            boost_weight=self._settings.definitional_boost_weight,
-        )
+        if use_def_boost:
+            boosted = apply_definitional_boost(
+                boosted,
+                core_query,
+                boost_weight=self._settings.definitional_boost_weight,
+            )
+
+        timings.retrieval_ms = (time.perf_counter() - t0) * 1000.0
 
         # Cross-encoder rerank (pool includes pinned; merge guarantees they survive)
+        t_rerank = time.perf_counter()
         rerank_pool = boosted
         rerank_k = min(len(rerank_pool), candidate_k + len(pinned))
-        reranked_pool = self._reranker.rerank(core_query, rerank_pool, top_k=rerank_k)
+        if use_rerank:
+            reranked_pool = self._reranker.rerank(core_query, rerank_pool, top_k=rerank_k)
+        else:
+            reranked_pool = rerank_pool[:rerank_k]
+        timings.rerank_ms = (time.perf_counter() - t_rerank) * 1000.0
+
         final_chunks = merge_pinned_with_reranked(pinned, reranked_pool, top_k=final_k)
         final_chunks = sort_definition_first(final_chunks, register_entities)
 
@@ -286,11 +321,14 @@ class RetrievalService:
         sufficiency = EvidenceSufficiency(
             sufficient=sufficiency_raw.sufficient,
             confidence=sufficiency_raw.confidence,
+            coverage_score=sufficiency_raw.coverage_score,
             coverage=EvidenceCoverage(
                 definition=sufficiency_raw.coverage.definition,
                 behavior=sufficiency_raw.coverage.behavior,
                 exceptions=sufficiency_raw.coverage.exceptions,
                 interactions=sufficiency_raw.coverage.interactions,
+                query_relevance=sufficiency_raw.coverage.query_relevance,
+                total_weighted=sufficiency_raw.coverage.total_weighted,
                 missing_categories=sufficiency_raw.coverage.missing,
             ),
             message=sufficiency_raw.message,
@@ -366,4 +404,5 @@ class RetrievalService:
             sources=sources,
             debug=debug,
             sufficiency=sufficiency,
+            timings=timings,
         )

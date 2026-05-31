@@ -65,16 +65,19 @@ export interface VerificationResult {
 }
 
 export interface EvidenceCoverage {
-  definition: boolean;
-  behavior: boolean;
-  exceptions: boolean;
-  interactions: boolean;
+  definition: number;
+  behavior: number;
+  exceptions: number;
+  interactions: number;
+  query_relevance?: number;
+  total_weighted?: number;
   missing_categories: string[];
 }
 
 export interface EvidenceSufficiency {
   sufficient: boolean;
   confidence: string;
+  coverage_score?: number;
   coverage: EvidenceCoverage;
   message?: string | null;
   entity_mentions?: number;

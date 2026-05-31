@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass, field
 
+from app.config import get_settings
 from app.services.definitional_boost import definitional_score, extract_target_entities
 from app.services.entity_matcher import extract_entities
 from app.services.query_preprocess import extract_core_query
@@ -14,7 +15,44 @@ from app.services.register_definition_resolver import (
 )
 from app.services.vector_store import RetrievedChunk
 
-# Claim categories checked before generation
+# Default weighted coverage model (overridden by Settings / .env)
+COVERAGE_WEIGHTS: dict[str, float] = {
+    "definition": 0.35,
+    "behavior": 0.25,
+    "exceptions": 0.20,
+    "interactions": 0.20,
+}
+
+CONFIDENCE_HIGH_THRESHOLD = 0.80
+CONFIDENCE_MEDIUM_THRESHOLD = 0.50
+
+
+def _coverage_weights() -> dict[str, float]:
+    s = get_settings()
+    return {
+        "definition": s.coverage_weight_definition,
+        "behavior": s.coverage_weight_behavior,
+        "exceptions": s.coverage_weight_exceptions,
+        "interactions": s.coverage_weight_interactions,
+    }
+
+
+def _confidence_high_threshold() -> float:
+    return get_settings().coverage_confidence_high
+
+
+def _confidence_medium_threshold() -> float:
+    return get_settings().coverage_confidence_medium
+
+_QUERY_STOPWORDS = frozenset(
+    {
+        "what", "how", "does", "the", "and", "for", "with", "from", "that", "this",
+        "are", "is", "of", "in", "to", "a", "an", "on", "or", "be", "by", "at",
+        "explain", "describe", "define", "list", "which", "when", "where", "why",
+        "work", "works", "using", "use", "about", "detail", "details", "example",
+    }
+)
+
 _CATEGORY_DEFINITION = "definition"
 _CATEGORY_BEHAVIOR = "behavior"
 _CATEGORY_EXCEPTIONS = "exceptions"
@@ -34,6 +72,14 @@ _EXCEPTION_QUERY = re.compile(
 )
 _INTERACTION_QUERY = re.compile(
     r"\b(interact|interaction|paging|page table|when used with|depends on|requires)\b",
+    re.I,
+)
+_BIT_NUMBER_QUERY = re.compile(
+    r"\b(bit\s+(?:number|position|field)|which\s+bit|bit\s+\d+)\b",
+    re.I,
+)
+_REGISTER_MEANING_QUERY = re.compile(
+    r"\b(register\s+meaning|meaning\s+of|what\s+does\s+(?:CR|IA32|EFER|RFLAGS))",
     re.I,
 )
 
@@ -71,13 +117,31 @@ _INTERACTION_EVIDENCE = (
 
 @dataclass
 class CategoryCoverage:
-    """Whether retrieved chunks explicitly support a claim category."""
+    """Per-category evidence scores (0.0–1.0) and legacy boolean flags."""
 
-    definition: bool = False
-    behavior: bool = False
-    exceptions: bool = False
-    interactions: bool = False
+    definition: float = 0.0
+    behavior: float = 0.0
+    exceptions: float = 0.0
+    interactions: float = 0.0
+    query_relevance: float = 0.0
+    total_weighted: float = 0.0
     missing: list[str] = field(default_factory=list)
+
+    @property
+    def definition_met(self) -> bool:
+        return self.definition >= 0.5
+
+    @property
+    def behavior_met(self) -> bool:
+        return self.behavior >= 0.5
+
+    @property
+    def exceptions_met(self) -> bool:
+        return self.exceptions >= 0.5
+
+    @property
+    def interactions_met(self) -> bool:
+        return self.interactions >= 0.5
 
     def to_dict(self) -> dict:
         return {
@@ -85,6 +149,8 @@ class CategoryCoverage:
             "behavior": self.behavior,
             "exceptions": self.exceptions,
             "interactions": self.interactions,
+            "query_relevance": self.query_relevance,
+            "total_weighted": self.total_weighted,
             "missing_categories": self.missing,
         }
 
@@ -103,11 +169,13 @@ class SufficiencyResult:
     authoritative_definitions_found: bool = False
     missing_definition_entities: list[str] = field(default_factory=list)
     pinned_chunk_ids: list[str] = field(default_factory=list)
+    coverage_score: float = 0.0
 
     def to_dict(self) -> dict:
         return {
             "sufficient": self.sufficient,
             "confidence": self.confidence,
+            "coverage_score": self.coverage_score,
             "coverage": self.coverage.to_dict(),
             "message": self.message,
             "entity_mentions": self.entity_mentions,
@@ -117,6 +185,20 @@ class SufficiencyResult:
             "missing_definition_entities": self.missing_definition_entities,
             "pinned_chunk_ids": self.pinned_chunk_ids,
         }
+
+
+def requires_authoritative_definition(query: str) -> bool:
+    """Strict definition queries: exact meaning, bit number, or register semantics."""
+    if requires_exact_definition(query):
+        return True
+    core = extract_core_query(query)
+    if _BIT_NUMBER_QUERY.search(core):
+        return True
+    if _REGISTER_MEANING_QUERY.search(core):
+        return True
+    if extract_register_entities(query):
+        return bool(_EXPLAIN_QUERY.search(core))
+    return False
 
 
 def _entity_in_text(text: str, target: str) -> bool:
@@ -133,17 +215,64 @@ def _chunk_mentions_entity(text: str, targets: tuple[str, ...]) -> bool:
     return any(_entity_in_text(text, t) for t in targets)
 
 
-def _category_supported(
+def _pattern_hits(text: str, patterns: tuple[re.Pattern[str], ...]) -> int:
+    return sum(1 for p in patterns if p.search(text))
+
+
+def _category_score(
     chunks: list[RetrievedChunk],
     targets: tuple[str, ...],
     patterns: tuple[re.Pattern[str], ...],
-) -> bool:
+    *,
+    authoritative: bool = False,
+) -> float:
+    """Score 0.0–1.0 for category support across retrieved chunks."""
+    if not chunks:
+        return 0.0
+
+    best = 0.0
     for chunk in chunks:
-        if not _chunk_mentions_entity(chunk.text, targets):
+        text = chunk.text
+        entity_hit = _chunk_mentions_entity(text, targets) if targets else True
+        if not entity_hit:
             continue
-        if any(p.search(chunk.text) for p in patterns):
-            return True
-    return False
+
+        if authoritative:
+            if targets and any(is_authoritative_definition(text, t) for t in targets):
+                return 1.0
+            def_score = (
+                max(
+                    (definitional_score(text, targets) / 3.0 if targets else 0.0),
+                    0.0,
+                )
+            )
+            pattern_score = min(_pattern_hits(text, patterns) / 3.0, 1.0)
+            chunk_score = max(def_score, pattern_score * 0.7)
+        else:
+            pattern_score = min(_pattern_hits(text, patterns) / 2.0, 1.0)
+            mention_score = 0.25 if entity_hit else 0.0
+            chunk_score = max(pattern_score, mention_score)
+
+        best = max(best, min(chunk_score, 1.0))
+
+    return best
+
+
+def _extract_query_terms(query: str) -> list[str]:
+    core = extract_core_query(query).lower()
+    tokens = re.findall(r"[a-z0-9]{4,}", core)
+    return [t for t in tokens if t not in _QUERY_STOPWORDS]
+
+
+def _query_relevance_score(chunks: list[RetrievedChunk], query: str) -> float:
+    """How well retrieved chunks cover query terms (for off-manual / general queries)."""
+    terms = _extract_query_terms(query)
+    if not terms or not chunks:
+        return 0.0
+
+    combined = " ".join(c.text.lower() for c in chunks[:5])
+    hits = sum(1 for term in terms if term in combined)
+    return min(hits / len(terms), 1.0)
 
 
 def _required_categories(query: str) -> set[str]:
@@ -159,30 +288,60 @@ def _required_categories(query: str) -> set[str]:
     if _INTERACTION_QUERY.search(core):
         required.add(_CATEGORY_INTERACTIONS)
 
-    # Broad explain queries need at least definition evidence
     if not required and re.search(r"\b(flag|bit|register|msr)\b", core, re.I):
         required.add(_CATEGORY_DEFINITION)
 
     return required
 
 
+def compute_weighted_coverage(
+    scores: CategoryCoverage,
+    required: set[str],
+) -> float:
+    """Weighted total over required categories; falls back to query relevance."""
+    if required:
+        active = {cat: _coverage_weights()[cat] for cat in required if cat in _coverage_weights()}
+        if not active:
+            return scores.query_relevance
+        total_weight = sum(active.values())
+        weighted = sum(
+            active[cat] * getattr(scores, cat if cat != "definition" else "definition")
+            for cat in active
+        )
+        return weighted / total_weight
+
+    # No technical categories — off-topic or general knowledge queries
+    return scores.query_relevance
+
+
+def confidence_from_coverage(coverage_score: float) -> str:
+    high = _confidence_high_threshold()
+    medium = _confidence_medium_threshold()
+    if coverage_score > high:
+        return "high"
+    if coverage_score >= medium:
+        return "medium"
+    return "low"
+
+
 def measure_coverage(
     chunks: list[RetrievedChunk],
     query: str,
 ) -> CategoryCoverage:
-    """Check which claim categories are explicitly supported by retrieval."""
+    """Compute per-category scores and weighted total coverage."""
     targets = extract_register_entities(query) or extract_target_entities(query)
     entities = extract_entities(extract_core_query(query))
     if not targets:
         targets = tuple(entities.registers + entities.flags)
 
     coverage = CategoryCoverage(
-        definition=any(is_authoritative_definition(c.text, t) for c in chunks for t in targets)
-        if targets
-        else bool(chunks),
-        behavior=_category_supported(chunks, targets, _BEHAVIOR_EVIDENCE),
-        exceptions=_category_supported(chunks, targets, _EXCEPTION_EVIDENCE),
-        interactions=_category_supported(chunks, targets, _INTERACTION_EVIDENCE),
+        definition=_category_score(
+            chunks, targets, _DEFINITION_EVIDENCE, authoritative=True
+        ),
+        behavior=_category_score(chunks, targets, _BEHAVIOR_EVIDENCE),
+        exceptions=_category_score(chunks, targets, _EXCEPTION_EVIDENCE),
+        interactions=_category_score(chunks, targets, _INTERACTION_EVIDENCE),
+        query_relevance=_query_relevance_score(chunks, query),
     )
 
     required = _required_categories(query)
@@ -192,46 +351,12 @@ def measure_coverage(
         _CATEGORY_EXCEPTIONS: coverage.exceptions,
         _CATEGORY_INTERACTIONS: coverage.interactions,
     }
-    coverage.missing = [cat for cat in required if not checks.get(cat, False)]
-    return coverage
-
-
-def compute_retrieval_confidence(
-    chunks: list[RetrievedChunk],
-    coverage: CategoryCoverage,
-    query: str,
-) -> str:
-    """Classify retrieval confidence as high, medium, or low."""
-    if not chunks:
-        return "low"
-
-    targets = extract_target_entities(query)
-    top_rerank = max(
-        float(c.metadata.get("rerank_score", c.score)) for c in chunks
-    )
-    entity_mentions = sum(
-        1 for c in chunks if _chunk_mentions_entity(c.text, targets)
-    ) if targets else len(chunks)
-    def_hits = sum(definitional_score(c.text, targets) for c in chunks) if targets else 0
-
-    rerank_scores = [
-        float(c.metadata.get("rerank_score", c.score)) for c in chunks[:3]
+    medium = _confidence_medium_threshold()
+    coverage.missing = [
+        cat for cat in required if checks.get(cat, 0.0) < medium
     ]
-    score_spread = max(rerank_scores) - min(rerank_scores) if rerank_scores else 1.0
-
-    if (
-        coverage.definition
-        and top_rerank >= 0.35
-        and entity_mentions >= 1
-        and def_hits >= 2
-        and score_spread <= 0.25
-    ):
-        return "high"
-
-    if entity_mentions >= 1 and (coverage.definition or top_rerank >= 0.25):
-        return "medium"
-
-    return "low"
+    coverage.total_weighted = compute_weighted_coverage(coverage, required)
+    return coverage
 
 
 def build_insufficient_message(
@@ -251,10 +376,17 @@ def build_insufficient_message(
             f"({missing})."
         )
 
-    if requires_exact_definition(query) and not coverage.definition:
+    if requires_authoritative_definition(query) and coverage.definition < 0.5:
         return "Insufficient retrieved evidence for exact register definition."
 
-    if confidence == "low" and not coverage.definition:
+    medium = _confidence_medium_threshold()
+    if confidence == "low" and coverage.query_relevance < medium:
+        return (
+            "Insufficient retrieved evidence. Retrieved sources do not cover "
+            "the topic of this question."
+        )
+
+    if confidence == "low" and targets and coverage.definition < medium:
         return (
             f"Retrieved context mentions {entity_label} but does not provide "
             f"sufficient detail regarding semantics or exceptions."
@@ -277,35 +409,50 @@ def assess_sufficiency(
 ) -> SufficiencyResult:
     """Decide whether retrieved evidence is sufficient to generate an answer."""
     coverage = measure_coverage(chunks, query)
-    confidence = compute_retrieval_confidence(chunks, coverage, query)
-    targets = extract_register_entities(query) or extract_target_entities(query)
+    required = _required_categories(query)
+    coverage_score = coverage.total_weighted
+    confidence = confidence_from_coverage(coverage_score)
 
+    targets = extract_register_entities(query) or extract_target_entities(query)
     all_covered, missing_defs = authoritative_coverage(chunks, query)
     entity_mentions = sum(
         1 for c in chunks if _chunk_mentions_entity(c.text, targets)
-    ) if targets else len(chunks)
+    ) if targets else 0
     def_hits = sum(definitional_score(c.text, targets) for c in chunks) if targets else 0
     top_rerank = max(
         (float(c.metadata.get("rerank_score", c.score)) for c in chunks),
         default=0.0,
     )
 
-    required = _required_categories(query)
-    sufficient = len(coverage.missing) == 0
+    # Boost score when pinned authoritative definitions are present
+    if pinned_chunk_ids:
+        coverage.definition = max(coverage.definition, 1.0)
+        if _CATEGORY_DEFINITION in required:
+            coverage.missing = [c for c in coverage.missing if c != _CATEGORY_DEFINITION]
+        coverage_score = compute_weighted_coverage(coverage, required)
+        confidence = confidence_from_coverage(coverage_score)
 
-    if requires_exact_definition(query) and not all_covered:
+    medium = _confidence_medium_threshold()
+    sufficient = coverage_score >= medium and not coverage.missing
+
+    # Definition strictness: authoritative chunk required for exact-definition queries
+    if requires_authoritative_definition(query):
+        has_authoritative = all_covered or any(
+            c.metadata.get("pinned_definition") for c in chunks
+        )
+        if not has_authoritative:
+            sufficient = False
+            confidence = "low"
+            if "definition" not in coverage.missing:
+                coverage.missing.append("definition")
+            coverage.definition = min(coverage.definition, 0.49)
+
+    # Low confidence → prefer abstention
+    if confidence == "low":
         sufficient = False
-        confidence = "low"
-        coverage.definition = False
-        if "definition" not in coverage.missing:
-            coverage.missing.append("definition")
 
-    # Low confidence with only passing mentions → gate
-    if confidence == "low" and targets and entity_mentions > 0 and def_hits < 2:
-        sufficient = False
-
-    # Explain query without definition evidence → gate
-    if _CATEGORY_DEFINITION in required and not coverage.definition:
+    # Off-manual queries: low query relevance → abstain even if chunks exist
+    if not required and not targets and coverage.query_relevance < medium:
         sufficient = False
         confidence = "low"
 
@@ -319,11 +466,12 @@ def assess_sufficiency(
         sufficient=sufficient,
         confidence=confidence,
         coverage=coverage,
+        coverage_score=coverage_score,
         message=message,
         entity_mentions=entity_mentions,
         definitional_hits=def_hits,
         top_rerank_score=top_rerank,
-        authoritative_definitions_found=all_covered,
+        authoritative_definitions_found=all_covered or bool(pinned_chunk_ids),
         missing_definition_entities=missing_defs,
         pinned_chunk_ids=pinned_chunk_ids or [],
     )
