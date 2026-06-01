@@ -28,16 +28,64 @@ Unlike generic RAG demos, DocIntel combines **keyword + vector hybrid retrieval*
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Q[User Query] --> QE[Query Expansion]
-    QE --> HR[Hybrid Retrieval]
-    HR --> RRF[RRF Fusion]
-    RRF --> RER[Cross-Encoder Rerank]
-    RER --> DR[Definition Resolver]
-    DR --> EG[Evidence Gate]
-    EG --> LLM[LLM Generation]
-    LLM --> VER[Verification]
-    VER --> ANS[Final Answer]
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '17px', 'fontFamily': 'Segoe UI, system-ui, sans-serif'}}}%%
+flowchart TB
+    Q(["🔍  User Query"])
+
+    subgraph S1["①  QUERY UNDERSTANDING"]
+        direction TB
+        QE["📝  Query Expansion<br/>register aliases · entity detection"]
+    end
+
+    subgraph S2["②  RETRIEVAL PIPELINE"]
+        direction TB
+        HR["🔎  Hybrid Retrieval<br/>HNSW vector + BM25 keyword"]
+        RRF["🔀  RRF Fusion<br/>reciprocal rank merge"]
+        RER["🎯  Cross-Encoder Rerank<br/>bge-reranker-large"]
+        DR["📌  Definition Resolver<br/>pin authoritative definitions"]
+    end
+
+    subgraph S3["③  GROUNDED GENERATION"]
+        direction TB
+        EG{"🛡️  Evidence Gate<br/>weighted coverage check"}
+        LLM["🤖  LLM Generation<br/>Ollama · Qwen2.5"]
+    end
+
+    subgraph S4["④  QUALITY & OUTPUT"]
+        direction TB
+        VER["✅  Verification<br/>selective · cached · risk-based"]
+        ANS(["✨  Final Answer<br/>cited · grounded"])
+    end
+
+    Q --> QE
+    QE --> HR
+    HR --> RRF
+    RRF --> RER
+    RER --> DR
+    DR --> EG
+    EG -->|sufficient| LLM
+    EG -->|insufficient| ANS
+    LLM --> VER
+    VER --> ANS
+
+    style Q fill:#6366f1,stroke:#4338ca,color:#ffffff,stroke-width:3px
+    style ANS fill:#10b981,stroke:#059669,color:#ffffff,stroke-width:3px
+
+    style S1 fill:#eef2ff,stroke:#6366f1,color:#312e81,stroke-width:2px
+    style S2 fill:#ecfeff,stroke:#0891b2,color:#164e63,stroke-width:2px
+    style S3 fill:#f0fdf4,stroke:#16a34a,color:#14532d,stroke-width:2px
+    style S4 fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:2px
+
+    style QE fill:#818cf8,stroke:#6366f1,color:#ffffff
+    style HR fill:#22d3ee,stroke:#0891b2,color:#083344
+    style RRF fill:#06b6d4,stroke:#0e7490,color:#ffffff
+    style RER fill:#38bdf8,stroke:#0284c7,color:#ffffff
+    style DR fill:#14b8a6,stroke:#0d9488,color:#ffffff
+
+    style EG fill:#fbbf24,stroke:#d97706,color:#78350f,stroke-width:2px
+    style LLM fill:#4ade80,stroke:#16a34a,color:#14532d
+
+    style VER fill:#fb923c,stroke:#ea580c,color:#ffffff
 ```
 
 | Stage | Implementation |
