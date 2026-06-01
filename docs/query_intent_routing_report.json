@@ -1,0 +1,79 @@
+[
+  {
+    "id": "definition_validation",
+    "query": "CR0.PG means Page Global Enable. Is this correct?",
+    "expected_intent": "verification",
+    "expected_pipeline": "verification_qa",
+    "notes": "Should answer NO: CR0.PG=Paging Enable; CR4.PGE=Page Global Enable",
+    "detected_intent": "verification",
+    "selected_pipeline": "verification_qa",
+    "evidence_categories_required": [
+      "definition"
+    ],
+    "answer_template": "verification",
+    "procedural_flag_legacy": false,
+    "classification_reasons": [
+      "validation phrasing (e.g. 'is this correct')"
+    ],
+    "intent_match": true
+  },
+  {
+    "id": "compare_entities",
+    "query": "Differentiate CR0.PG and CR4.PGE \u2014 what does each bit enable?",
+    "expected_intent": "comparison",
+    "expected_pipeline": "comparison_qa",
+    "notes": "One definition per bit with citations",
+    "detected_intent": "comparison",
+    "selected_pipeline": "comparison_qa",
+    "evidence_categories_required": [
+      "behavior",
+      "definition"
+    ],
+    "answer_template": "comparison",
+    "procedural_flag_legacy": false,
+    "classification_reasons": [
+      "comparison/differentiation phrasing"
+    ],
+    "intent_match": true
+  },
+  {
+    "id": "procedural_sequence",
+    "query": "Explain the sequence required to transition from real-address mode to IA-32e mode.",
+    "expected_intent": "procedural",
+    "expected_pipeline": "procedural_extraction",
+    "notes": "Gate on procedural+behavior evidence, not definition-only",
+    "detected_intent": "procedural",
+    "selected_pipeline": "procedural_extraction",
+    "evidence_categories_required": [
+      "behavior",
+      "procedural"
+    ],
+    "answer_template": "procedural",
+    "procedural_flag_legacy": true,
+    "classification_reasons": [
+      "sequence/step/transition request"
+    ],
+    "intent_match": true
+  },
+  {
+    "id": "hallucination_resistance",
+    "query": "Does setting NXE always cause a #GP fault regardless of paging mode?",
+    "expected_intent": "verification",
+    "expected_pipeline": "verification_qa",
+    "notes": "Conservative yes/no with source-backed exception behavior",
+    "detected_intent": "verification",
+    "selected_pipeline": "verification_qa",
+    "evidence_categories_required": [
+      "definition",
+      "exceptions",
+      "interactions"
+    ],
+    "answer_template": "verification",
+    "procedural_flag_legacy": false,
+    "classification_reasons": [
+      "no specialized intent markers",
+      "exception/claim language \u2014 prefer conservative QA"
+    ],
+    "intent_match": true
+  }
+]

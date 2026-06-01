@@ -2,55 +2,79 @@
 
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { FileText, Upload } from "lucide-react";
+import { useUI } from "@/context/UIContext";
+import { cn } from "@/lib/utils";
+import { RotateCcw } from "lucide-react";
 import Link from "next/link";
 
 interface HeaderProps {
   apiOnline: boolean;
-  onUploadClick?: () => void;
+  hasDocument?: boolean;
+  onStartOver?: () => void;
 }
 
-export function Header({ apiOnline, onUploadClick }: HeaderProps) {
+export function Header({
+  apiOnline,
+  hasDocument,
+  onStartOver,
+}: HeaderProps) {
+  const { portfolioMode, togglePortfolioMode } = useUI();
+
   return (
     <motion.header
-      initial={{ y: -12, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      className="sticky top-0 z-50 border-b border-ghost-border bg-paper-white/90 backdrop-blur-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="sticky top-0 z-50 border-b border-charcoal bg-midnight/90 backdrop-blur-md"
     >
-      <div className="mx-auto flex max-w-page items-center justify-between px-6 py-4 lg:px-8">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-card bg-electric-violet">
-            <FileText className="h-4 w-4 text-paper-white" />
-          </div>
-          <div>
-            <p className="font-display text-heading-sm font-bold tracking-tight text-midnight-ink">
-              DocIntel
-            </p>
-            <p className="text-caption text-muted-ash">Document Intelligence</p>
-          </div>
-        </div>
+      <div className="flex h-14 items-center justify-between px-6 md:px-12 lg:px-16 xl:px-24 2xl:px-32">
+        <Link href="/" className="font-display text-body font-normal text-ghost-ash">
+          DocIntel
+        </Link>
 
-        <nav className="hidden items-center gap-2 md:flex">
-          <Link href="#workspace">
-            <Button variant="outline" className="px-4 py-1.5 text-caption">
+        <nav className="hidden items-center gap-6 md:flex">
+          {hasDocument && (
+            <Link
+              href="/#workspace"
+              className="text-caption text-slate transition-colors hover:text-ghost-ash"
+            >
               Workspace
-            </Button>
+            </Link>
+          )}
+          <Link
+            href="/architecture"
+            className="text-caption text-slate transition-colors hover:text-ghost-ash"
+          >
+            Architecture
           </Link>
-          <Link href="#features">
-            <Button variant="ghost" className="px-4 py-1.5 text-caption">
-              Features
-            </Button>
-          </Link>
-          <Badge variant={apiOnline ? "success" : "warning"}>
-            {apiOnline ? "API Online" : "API Offline"}
-          </Badge>
         </nav>
 
-        <Button onClick={onUploadClick} className="text-caption md:text-body">
-          <Upload className="h-4 w-4" />
-          Upload PDF
-        </Button>
+        <div className="flex items-center gap-3">
+          {hasDocument && onStartOver && (
+            <button
+              type="button"
+              onClick={onStartOver}
+              className="inline-flex items-center gap-1.5 text-caption text-slate transition-colors hover:text-ghost-ash"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Start over</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={togglePortfolioMode}
+            className={cn(
+              "rounded-btn px-3 py-1.5 text-caption transition-colors",
+              portfolioMode
+                ? "bg-charcoal font-medium text-ghost-ash shadow-inset"
+                : "text-slate hover:text-ghost-ash"
+            )}
+          >
+            Present
+          </button>
+          <Badge variant={apiOnline ? "success" : "warning"}>
+            {apiOnline ? "Online" : "Offline"}
+          </Badge>
+        </div>
       </div>
     </motion.header>
   );

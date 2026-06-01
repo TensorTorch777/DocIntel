@@ -117,6 +117,20 @@ export interface SummarizeResponse {
   sources: RetrievedSource[];
 }
 
+export type PipelineStageStatus = "pending" | "running" | "completed" | "skipped";
+
+export interface PipelineStageEvent {
+  stage: string;
+  label: string;
+  status: PipelineStageStatus;
+  detail?: Record<string, unknown>;
+}
+
+export interface MessagePipelineState {
+  stages: PipelineStageEvent[];
+  active: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -129,4 +143,5 @@ export interface ChatMessage {
   retrievalConfidence?: string | null;
   evidenceSufficiency?: EvidenceSufficiency | null;
   revised?: boolean;
+  pipeline?: MessagePipelineState;
 }

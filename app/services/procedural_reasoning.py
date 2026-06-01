@@ -8,33 +8,12 @@ from dataclasses import dataclass, field
 from app.services.query_preprocess import extract_core_query
 from app.services.vector_store import RetrievedChunk
 
-PROCEDURAL_KEYWORDS = (
-    "sequence",
-    "steps",
-    "step-by-step",
-    "step by step",
-    "process",
-    "transition",
-    "initialize",
-    "initialise",
-    "enable",
-    "disable",
-    "configure",
-    "switch mode",
-    "procedure",
-    "ordered",
-    "how to",
-    "list the",
-)
+def is_procedural_query(query: str) -> bool:
+    """Detect queries requesting ordered procedures or sequences."""
+    from app.services.query_intent import is_procedural_intent
 
-_PROCEDURAL_QUERY = re.compile(
-    r"\b("
-    r"sequence|steps?|step-by-step|process|transition|initialize|initialise|"
-    r"enable|disable|configure|switch\s+mode|procedure|ordered|how\s+to|"
-    r"list\s+the(?:\s+sequence|\s+steps)?|must\s+first|happens\s+on"
-    r")\b",
-    re.I,
-)
+    return is_procedural_intent(query)
+
 
 _NUMBERED_LINE = re.compile(r"^\s*(\d+)[\.)]\s+(.+)$", re.MULTILINE)
 _BULLET_LINE = re.compile(r"^\s*[-•*]\s+(.+)$", re.MULTILINE)
@@ -156,15 +135,6 @@ _INTENT_PROFILES: list[dict] = [
         "penalize": ["paging", "CR0.PG", "TSS", "VMX"],
     },
 ]
-
-
-def is_procedural_query(query: str) -> bool:
-    """Detect queries requesting ordered procedures or sequences."""
-    core = extract_core_query(query)
-    lower = core.lower()
-    if any(kw in lower for kw in PROCEDURAL_KEYWORDS):
-        return True
-    return bool(_PROCEDURAL_QUERY.search(core))
 
 
 def _temporal_rank(text: str) -> int:

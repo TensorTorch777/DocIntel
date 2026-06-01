@@ -1,0 +1,96 @@
+[
+  {
+    "id": "cr3_fault_address",
+    "query": "Does CR3 store the faulting address during a page fault?",
+    "detected_intent": "verification",
+    "pipeline": "verification_qa",
+    "evidence_categories_required": [
+      "behavior",
+      "exceptions"
+    ],
+    "evidence_categories_matched": [
+      "exceptions",
+      "interactions"
+    ],
+    "coverage": {
+      "definition": 0.0,
+      "behavior": 0.25,
+      "exceptions": 1.0,
+      "interactions": 0.5,
+      "procedural": 0.25,
+      "query_relevance": 0.5,
+      "total_weighted": 0.5833333333333334,
+      "missing_categories": [
+        "behavior"
+      ]
+    },
+    "abstention_decision": false,
+    "confidence": "high",
+    "refutation_detected": true,
+    "final_answer": "NO. The processor loads CR2 (not CR3) with the linear address that generated the exception [Source 1, p. 3390]",
+    "answer_template": "verification"
+  },
+  {
+    "id": "cr0_pg_validation",
+    "query": "CR0.PG means Page Global Enable. Is this correct?",
+    "detected_intent": "verification",
+    "pipeline": "verification_qa",
+    "evidence_categories_required": [
+      "behavior",
+      "exceptions"
+    ],
+    "evidence_categories_matched": [
+      "definition",
+      "behavior",
+      "interactions"
+    ],
+    "coverage": {
+      "definition": 0.7,
+      "behavior": 0.5,
+      "exceptions": 0.25,
+      "interactions": 1.0,
+      "procedural": 0.25,
+      "query_relevance": 0.6,
+      "total_weighted": 0.38888888888888884,
+      "missing_categories": [
+        "exceptions"
+      ]
+    },
+    "abstention_decision": false,
+    "confidence": "high",
+    "refutation_detected": true,
+    "final_answer": "NO. CR0.PG is Paging Enable, not Page Global Enable (Page Global Enable is CR4.PGE) [Source 1, p. 2100]",
+    "answer_template": "verification"
+  },
+  {
+    "id": "cr2_pdbr_role",
+    "query": "Is CR2 the page-directory base register?",
+    "detected_intent": "verification",
+    "pipeline": "verification_qa",
+    "evidence_categories_required": [
+      "behavior",
+      "exceptions"
+    ],
+    "evidence_categories_matched": [
+      "interactions"
+    ],
+    "coverage": {
+      "definition": 0.2333333333333333,
+      "behavior": 0.25,
+      "exceptions": 0.25,
+      "interactions": 0.5,
+      "procedural": 0.25,
+      "query_relevance": 1.0,
+      "total_weighted": 0.25,
+      "missing_categories": [
+        "exceptions",
+        "behavior"
+      ]
+    },
+    "abstention_decision": false,
+    "confidence": "high",
+    "refutation_detected": true,
+    "final_answer": "NO. Sources assign page-directory base to CR3, not CR2: CR3 \u2014 Page-Directory-Base Register (PDBR) [Source 1, p. 2500]",
+    "answer_template": "verification"
+  }
+]

@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --color-midnight-ink: #202020;
-  --color-cloud-canvas: #f5f5f5;
-  --color-paper-white: #ffffff;
-  --color-muted-ash: #333333;
-  --color-ghost-border: #f7f5fd;
-  --color-electric-violet: #5757f8;
-  --page-max-width: 1400px;
+  --color-midnight: #000000;
+  --color-charcoal: #1a1a1a;
+  --color-slate: #7d7d7d;
+  --color-ghost-ash: #f6f6f4;
+  --color-smoke: #ffffff;
+  --color-accent: #ff8400;
+  --gradient-iridescent: linear-gradient(90deg, #feed7a, #ff8400, #df91f7);
 }
 
 * {
@@ -18,56 +18,150 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
-  @apply bg-cloud-canvas text-midnight-ink font-body font-medium antialiased;
+  background-color: var(--color-midnight);
+  color: var(--color-ghost-ash);
+  font-family: var(--font-grotesk), Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: #5757f833;
-  color: #202020;
+  background: rgba(255, 132, 0, 0.25);
+  color: var(--color-ghost-ash);
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+
+  .text-iridescent {
+    background: var(--gradient-iridescent);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .bg-iridescent {
+    background: var(--gradient-iridescent);
+  }
+
+  .divider-subtle {
+    border-top: 1px solid var(--color-charcoal);
+  }
 }
 
-/* Markdown in chat */
-.prose-docintel {
-  @apply text-body text-muted-ash leading-relaxed;
-}
+@layer components {
+  .obsidian-glass {
+    background: rgba(26, 26, 26, 0.75);
+    border: 1px solid var(--color-charcoal);
+    border-radius: 16px;
+    box-shadow: rgba(255, 255, 255, 0.25) 0px 0.636826px 3.82096px 0px inset;
+    backdrop-filter: blur(14px);
+  }
 
-.prose-docintel p {
-  @apply mb-4 last:mb-0;
-}
+  .clyde-atmosphere {
+    position: relative;
+    background-color: var(--color-midnight);
+    overflow: hidden;
+  }
 
-.prose-docintel strong {
-  @apply text-midnight-ink font-bold;
-}
+  .clyde-atmosphere::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        ellipse 80% 50% at 70% 20%,
+        rgba(223, 145, 247, 0.12) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 20% 80%,
+        rgba(255, 132, 0, 0.08) 0%,
+        transparent 50%
+      );
+  }
 
-.prose-docintel code {
-  @apply rounded bg-cloud-canvas px-1.5 py-0.5 text-caption font-body text-midnight-ink;
-}
+  .prose-docintel {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--color-ghost-ash);
+  }
 
-.prose-docintel pre {
-  @apply my-4 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-ghost-border bg-cloud-canvas p-4 text-caption text-midnight-ink;
-}
+  .prose-docintel p {
+    margin-bottom: 1rem;
+  }
 
-.prose-docintel pre code {
-  @apply bg-transparent p-0 text-inherit;
-}
+  .prose-docintel p:last-child {
+    margin-bottom: 0;
+  }
 
-.prose-docintel blockquote {
-  @apply my-4 border-l-4 border-electric-violet/40 bg-cloud-canvas py-2 pl-4 pr-2 italic text-muted-ash;
-}
+  .prose-docintel strong {
+    color: var(--color-ghost-ash);
+    font-weight: 600;
+  }
 
-.prose-docintel ul {
-  @apply mb-4 list-disc pl-5;
-}
+  .prose-docintel code {
+    border-radius: 4px;
+    background-color: var(--color-charcoal);
+    padding: 0.125rem 0.375rem;
+    font-size: 13px;
+    color: var(--color-ghost-ash);
+  }
 
-.prose-docintel ol {
-  @apply mb-4 list-decimal pl-5;
+  .prose-docintel pre {
+    margin: 1rem 0;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 1rem;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-ghost-ash);
+    background-color: var(--color-charcoal);
+    border: 1px solid var(--color-charcoal);
+  }
+
+  .prose-docintel pre code {
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  .prose-docintel blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 0 0.5rem 1rem;
+    border-left: 3px solid var(--color-charcoal);
+    font-style: italic;
+    color: var(--color-slate);
+  }
+
+  .prose-docintel ul {
+    margin-bottom: 1rem;
+    list-style-type: disc;
+    padding-left: 1.25rem;
+  }
+
+  .prose-docintel ol {
+    margin-bottom: 1rem;
+    list-style-type: decimal;
+    padding-left: 1.25rem;
+  }
+
+  .prose-docintel a {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }

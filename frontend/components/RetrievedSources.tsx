@@ -49,62 +49,45 @@ export function RetrievedSources({
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 space-y-3 rounded-card border border-ghost-border bg-paper-white p-4"
+      className="mt-5 space-y-3 rounded-card border border-charcoal bg-charcoal p-4 shadow-inset"
     >
       {confidence && (
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={confidenceVariant(confidence)}>
-            retrieval confidence: {confidence}
+            Confidence: {confidence}
           </Badge>
           {evidenceSufficiency && !evidenceSufficiency.sufficient && (
-            <Badge variant="warning">evidence gated</Badge>
+            <Badge variant="warning">Evidence gated</Badge>
           )}
-          {evidenceSufficiency?.authoritative_definitions_found && (
-            <Badge variant="success">authoritative defs</Badge>
-          )}
-          {evidenceSufficiency?.missing_definition_entities &&
-            evidenceSufficiency.missing_definition_entities.length > 0 && (
-              <Badge variant="warning">
-                missing defs:{" "}
-                {evidenceSufficiency.missing_definition_entities.join(", ")}
-              </Badge>
-            )}
         </div>
       )}
 
       {sources.length > 0 && (
         <div>
           <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-electric-violet" />
-            <p className="font-display text-heading-sm text-midnight-ink">
-              Retrieved Sources ({sources.length})
+            <BookOpen className="h-4 w-4 text-iridescent" />
+            <p className="font-display text-sm font-medium text-ghost-ash">
+              Sources ({sources.length})
             </p>
           </div>
           <div className="mt-3 space-y-2">
             {sources.map((src) => (
               <div
                 key={src.chunk_id}
-                className="rounded-card bg-cloud-canvas p-3 text-caption text-muted-ash"
+                className="border-b border-charcoal py-2.5 text-caption text-slate last:border-b-0"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="accent">Source {src.source_index}</Badge>
-                  {(debug?.pinned_chunks?.some((p) => p.chunk_id === src.chunk_id) ||
-                    evidenceSufficiency?.pinned_chunk_ids?.includes(src.chunk_id)) && (
-                    <Badge variant="success">pinned definition</Badge>
-                  )}
                   {src.page_number != null && (
-                    <span className="text-midnight-ink">Page {src.page_number}</span>
+                    <span className="font-medium text-ghost-ash">
+                      Page {src.page_number}
+                    </span>
                   )}
-                  <span>vector={src.vector_score.toFixed(3)}</span>
-                  <span>rerank={src.rerank_score.toFixed(3)}</span>
-                  {src.bm25_score != null && (
-                    <span>bm25={src.bm25_score.toFixed(3)}</span>
-                  )}
-                  {(src.entity_hits ?? 0) > 0 && (
-                    <span>entities={src.entity_hits}</span>
-                  )}
+                  <span className="text-slate/80">
+                    vector {src.vector_score.toFixed(2)} · rerank{" "}
+                    {src.rerank_score.toFixed(2)}
+                  </span>
                 </div>
-                <p className="mt-2 leading-relaxed">{src.excerpt}</p>
+                <p className="mt-1.5 leading-relaxed">{src.excerpt}</p>
               </div>
             ))}
           </div>
@@ -112,36 +95,23 @@ export function RetrievedSources({
       )}
 
       {verification && (
-        <div className="border-t border-ghost-border pt-3">
+        <div className="divider-subtle pt-3">
           <div className="flex flex-wrap items-center gap-2">
             {verification.supported ? (
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              <ShieldCheck className="h-4 w-4 text-ghost-ash" />
             ) : (
-              <ShieldAlert className="h-4 w-4 text-amber-600" />
+              <ShieldAlert className="h-4 w-4 text-accent" />
             )}
-            <p className="font-display text-heading-sm text-midnight-ink">
-              Grounding Check
-            </p>
+            <p className="text-sm font-medium text-ghost-ash">Grounding</p>
             <Badge variant={verification.supported ? "success" : "warning"}>
-              {verification.supported ? "Supported" : "Issues found"}
+              {verification.supported ? "Supported" : "Review needed"}
             </Badge>
             <Badge variant={riskVariant}>
-              risk: {verification.hallucination_risk}
+              {verification.hallucination_risk} risk
             </Badge>
-            {verification.rewritten && (
-              <Badge variant="accent">Rewritten</Badge>
-            )}
-            {verification.regenerated && (
-              <Badge variant="accent">Regenerated</Badge>
-            )}
-            {(verification.unsupported_ratio ?? 0) > 0 && (
-              <Badge variant="warning">
-                {Math.round((verification.unsupported_ratio ?? 0) * 100)}% unsupported
-              </Badge>
-            )}
           </div>
           {verification.unsupported_claims.length > 0 && (
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-caption text-muted-ash">
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-caption text-slate">
               {verification.unsupported_claims.map((claim, i) => (
                 <li key={i}>
                   {claim.claim}
@@ -154,55 +124,47 @@ export function RetrievedSources({
       )}
 
       {debug && (
-        <div className="border-t border-ghost-border pt-3">
+        <div className="divider-subtle pt-3">
           <button
             type="button"
             onClick={() => setShowDebug(!showDebug)}
-            className="flex w-full items-center justify-between text-caption text-midnight-ink"
+            className="flex w-full items-center justify-between text-caption text-ghost-ash"
           >
-            <span className="font-display text-heading-sm">Retrieval Debug</span>
+            <span className="text-sm font-medium">Retrieval internals</span>
             <ChevronDown
-              className={`h-4 w-4 transition-transform ${showDebug ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-slate transition-transform ${showDebug ? "rotate-180" : ""}`}
             />
           </button>
           {showDebug && (
-            <div className="mt-3 space-y-2 text-caption text-muted-ash">
+            <div className="mt-3 space-y-2 text-caption text-slate">
               <p>
-                <strong>Original:</strong> {debug.original_query}
+                <strong className="text-ghost-ash">Original:</strong>{" "}
+                {debug.original_query}
               </p>
               {debug.core_query && debug.core_query !== debug.original_query && (
                 <p>
-                  <strong>Core query:</strong> {debug.core_query}
+                  <strong className="text-ghost-ash">Core query:</strong>{" "}
+                  {debug.core_query}
                 </p>
               )}
               <p>
-                <strong>Retrieval query:</strong> {debug.retrieval_query}
+                <strong className="text-ghost-ash">Retrieval query:</strong>{" "}
+                {debug.retrieval_query}
               </p>
               {debug.entities_detected.length > 0 && (
                 <p>
-                  <strong>Entities:</strong> {debug.entities_detected.join(", ")}
-                </p>
-              )}
-              {debug.evidence_coverage && (
-                <p>
-                  <strong>Coverage:</strong>{" "}
-                  def={String(debug.evidence_coverage.definition)} beh=
-                  {String(debug.evidence_coverage.behavior)} exc=
-                  {String(debug.evidence_coverage.exceptions)} int=
-                  {String(debug.evidence_coverage.interactions)}
-                  {debug.evidence_coverage.missing_categories.length > 0 &&
-                    ` missing=[${debug.evidence_coverage.missing_categories.join(", ")}]`}
+                  <strong className="text-ghost-ash">Entities:</strong>{" "}
+                  {debug.entities_detected.join(", ")}
                 </p>
               )}
               {debug.rejected_chunks.length > 0 && (
                 <div>
-                  <p className="mb-1 font-medium text-midnight-ink">
+                  <p className="mb-1 font-medium text-ghost-ash">
                     Rejected after rerank ({debug.rejected_chunks.length})
                   </p>
                   {debug.rejected_chunks.slice(0, 3).map((c) => (
                     <p key={c.chunk_id} className="truncate">
-                      Source {c.source_index} rerank={c.rerank_score.toFixed(3)} —{" "}
-                      {c.excerpt.slice(0, 80)}…
+                      p.{c.page_number ?? "?"} · {c.excerpt.slice(0, 80)}…
                     </p>
                   ))}
                 </div>

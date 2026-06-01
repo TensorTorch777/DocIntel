@@ -44,6 +44,11 @@ export function useDocuments() {
     [activeId, documents, persist]
   );
 
+  const clearDocuments = useCallback(() => {
+    persist([]);
+    setActiveId(null);
+  }, [persist]);
+
   const activeDocument = documents.find((d) => d.document_id === activeId) ?? null;
 
   return {
@@ -53,5 +58,6 @@ export function useDocuments() {
     setActiveId,
     addDocument,
     removeDocument,
+    clearDocuments,
   };
 }

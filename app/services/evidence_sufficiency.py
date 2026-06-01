@@ -4,9 +4,15 @@ import re
 from dataclasses import dataclass, field
 
 from app.config import get_settings
+from app.services.claim_refutation import ClaimRefutation, detect_claim_refutation
 from app.services.definitional_boost import definitional_score, extract_target_entities
 from app.services.entity_matcher import extract_entities
 from app.services.query_preprocess import extract_core_query
+from app.services.query_intent import (
+    EVIDENCE_PROCEDURAL,
+    QueryIntent,
+    classify_query_intent,
+)
 from app.services.register_definition_resolver import (
     authoritative_coverage,
     extract_register_entities,
@@ -57,6 +63,7 @@ _CATEGORY_DEFINITION = "definition"
 _CATEGORY_BEHAVIOR = "behavior"
 _CATEGORY_EXCEPTIONS = "exceptions"
 _CATEGORY_INTERACTIONS = "interactions"
+_CATEGORY_PROCEDURAL = EVIDENCE_PROCEDURAL
 
 _EXPLAIN_QUERY = re.compile(
     r"\b(explain|describe|what is|what are|define|definition of|meaning of|differentiate|compare|contrast)\b",
@@ -113,6 +120,21 @@ _INTERACTION_EVIDENCE = (
     re.compile(r"\bwhen used with\b", re.I),
     re.compile(r"\brequires\b", re.I),
 )
+_PROCEDURAL_EVIDENCE = (
+    re.compile(r"\bsequence\b", re.I),
+    re.compile(r"\bsteps?\b", re.I),
+    re.compile(r"\bfirst\b", re.I),
+    re.compile(r"\bthen\b", re.I),
+    re.compile(r"\bmust\b", re.I),
+    re.compile(r"\bbefore\b", re.I),
+    re.compile(r"\bafter\b", re.I),
+    re.compile(r"\btransition\b", re.I),
+    re.compile(r"\benter(?:ing)?\b", re.I),
+    re.compile(r"\bmode\b", re.I),
+    re.compile(r"\bLGDT\b", re.I),
+    re.compile(r"\bLIDT\b", re.I),
+    re.compile(r"\bfar jump\b", re.I),
+)
 
 
 @dataclass
@@ -123,6 +145,7 @@ class CategoryCoverage:
     behavior: float = 0.0
     exceptions: float = 0.0
     interactions: float = 0.0
+    procedural: float = 0.0
     query_relevance: float = 0.0
     total_weighted: float = 0.0
     missing: list[str] = field(default_factory=list)
@@ -143,12 +166,17 @@ class CategoryCoverage:
     def interactions_met(self) -> bool:
         return self.interactions >= 0.5
 
+    @property
+    def procedural_met(self) -> bool:
+        return self.procedural >= 0.5
+
     def to_dict(self) -> dict:
         return {
             "definition": self.definition,
             "behavior": self.behavior,
             "exceptions": self.exceptions,
             "interactions": self.interactions,
+            "procedural": self.procedural,
             "query_relevance": self.query_relevance,
             "total_weighted": self.total_weighted,
             "missing_categories": self.missing,
@@ -170,6 +198,7 @@ class SufficiencyResult:
     missing_definition_entities: list[str] = field(default_factory=list)
     pinned_chunk_ids: list[str] = field(default_factory=list)
     coverage_score: float = 0.0
+    refutation: ClaimRefutation | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -184,6 +213,17 @@ class SufficiencyResult:
             "authoritative_definitions_found": self.authoritative_definitions_found,
             "missing_definition_entities": self.missing_definition_entities,
             "pinned_chunk_ids": self.pinned_chunk_ids,
+            "refutation": (
+                {
+                    "queried_entity": self.refutation.queried_entity,
+                    "alternative_entity": self.refutation.alternative_entity,
+                    "role": self.refutation.role,
+                    "evidence_text": self.refutation.evidence_text,
+                    "authoritative": self.refutation.authoritative,
+                }
+                if self.refutation
+                else None
+            ),
         }
 
 
@@ -276,17 +316,17 @@ def _query_relevance_score(chunks: list[RetrievedChunk], query: str) -> float:
 
 
 def _required_categories(query: str) -> set[str]:
-    core = extract_core_query(query)
-    required: set[str] = set()
+    """Intent-first category requirements; legacy regex fills gaps for exceptions."""
+    intent_result = classify_query_intent(query)
+    required = set(intent_result.evidence_categories)
 
-    if _EXPLAIN_QUERY.search(core):
-        required.add(_CATEGORY_DEFINITION)
-    if _BEHAVIOR_QUERY.search(core):
-        required.add(_CATEGORY_BEHAVIOR)
+    core = extract_core_query(query)
     if _EXCEPTION_QUERY.search(core):
         required.add(_CATEGORY_EXCEPTIONS)
-    if _INTERACTION_QUERY.search(core):
+    if _INTERACTION_QUERY.search(core) and intent_result.intent != QueryIntent.PROCEDURAL:
         required.add(_CATEGORY_INTERACTIONS)
+    if _BEHAVIOR_QUERY.search(core) and _CATEGORY_BEHAVIOR not in required:
+        required.add(_CATEGORY_BEHAVIOR)
 
     if not required and re.search(r"\b(flag|bit|register|msr)\b", core, re.I):
         required.add(_CATEGORY_DEFINITION)
@@ -299,18 +339,23 @@ def compute_weighted_coverage(
     required: set[str],
 ) -> float:
     """Weighted total over required categories; falls back to query relevance."""
+    weights = dict(_coverage_weights())
+    weights[_CATEGORY_PROCEDURAL] = 0.45
+
     if required:
-        active = {cat: _coverage_weights()[cat] for cat in required if cat in _coverage_weights()}
+        active = {cat: weights.get(cat, 0.25) for cat in required}
         if not active:
             return scores.query_relevance
         total_weight = sum(active.values())
         weighted = sum(
-            active[cat] * getattr(scores, cat if cat != "definition" else "definition")
+            active[cat] * getattr(
+                scores,
+                cat if cat != _CATEGORY_PROCEDURAL else "procedural",
+            )
             for cat in active
         )
         return weighted / total_weight
 
-    # No technical categories — off-topic or general knowledge queries
     return scores.query_relevance
 
 
@@ -329,18 +374,23 @@ def measure_coverage(
     query: str,
 ) -> CategoryCoverage:
     """Compute per-category scores and weighted total coverage."""
+    intent_result = classify_query_intent(query)
     targets = extract_register_entities(query) or extract_target_entities(query)
     entities = extract_entities(extract_core_query(query))
     if not targets:
         targets = tuple(entities.registers + entities.flags)
 
+    # Verification/contradiction: score topic evidence, not only the queried entity
+    score_targets = () if intent_result.intent == QueryIntent.VERIFICATION else targets
+
     coverage = CategoryCoverage(
         definition=_category_score(
-            chunks, targets, _DEFINITION_EVIDENCE, authoritative=True
+            chunks, score_targets, _DEFINITION_EVIDENCE, authoritative=True
         ),
-        behavior=_category_score(chunks, targets, _BEHAVIOR_EVIDENCE),
-        exceptions=_category_score(chunks, targets, _EXCEPTION_EVIDENCE),
-        interactions=_category_score(chunks, targets, _INTERACTION_EVIDENCE),
+        behavior=_category_score(chunks, score_targets, _BEHAVIOR_EVIDENCE),
+        exceptions=_category_score(chunks, score_targets, _EXCEPTION_EVIDENCE),
+        interactions=_category_score(chunks, score_targets, _INTERACTION_EVIDENCE),
+        procedural=_category_score(chunks, score_targets, _PROCEDURAL_EVIDENCE),
         query_relevance=_query_relevance_score(chunks, query),
     )
 
@@ -350,6 +400,7 @@ def measure_coverage(
         _CATEGORY_BEHAVIOR: coverage.behavior,
         _CATEGORY_EXCEPTIONS: coverage.exceptions,
         _CATEGORY_INTERACTIONS: coverage.interactions,
+        _CATEGORY_PROCEDURAL: coverage.procedural,
     }
     medium = _confidence_medium_threshold()
     coverage.missing = [
@@ -408,6 +459,7 @@ def assess_sufficiency(
     pinned_chunk_ids: list[str] | None = None,
 ) -> SufficiencyResult:
     """Decide whether retrieved evidence is sufficient to generate an answer."""
+    intent_result = classify_query_intent(query)
     coverage = measure_coverage(chunks, query)
     required = _required_categories(query)
     coverage_score = coverage.total_weighted
@@ -435,8 +487,20 @@ def assess_sufficiency(
     medium = _confidence_medium_threshold()
     sufficient = coverage_score >= medium and not coverage.missing
 
-    # Definition strictness: authoritative chunk required for exact-definition queries
-    if requires_authoritative_definition(query):
+    refutation = detect_claim_refutation(chunks, query)
+    if refutation:
+        sufficient = True
+        confidence = "high"
+        coverage.missing = []
+        coverage_score = max(coverage_score, _confidence_high_threshold())
+        coverage.total_weighted = coverage_score
+
+    # Definition strictness: not for verification/refutation or procedural queries
+    if (
+        requires_authoritative_definition(query)
+        and intent_result.intent not in (QueryIntent.PROCEDURAL, QueryIntent.VERIFICATION)
+        and not refutation
+    ):
         has_authoritative = all_covered or any(
             c.metadata.get("pinned_definition") for c in chunks
         )
@@ -459,7 +523,10 @@ def assess_sufficiency(
     message = None
     if not sufficient:
         message = build_insufficient_message(
-            query, coverage, confidence, missing_defs if missing_defs else None
+            query,
+            coverage,
+            confidence,
+            missing_defs if missing_defs and not refutation else None,
         )
 
     return SufficiencyResult(
@@ -474,4 +541,5 @@ def assess_sufficiency(
         authoritative_definitions_found=all_covered or bool(pinned_chunk_ids),
         missing_definition_entities=missing_defs,
         pinned_chunk_ids=pinned_chunk_ids or [],
+        refutation=refutation,
     )

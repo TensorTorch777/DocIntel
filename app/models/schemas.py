@@ -135,6 +135,7 @@ class EvidenceSufficiency(BaseModel):
     authoritative_definitions_found: bool = False
     missing_definition_entities: list[str] = Field(default_factory=list)
     pinned_chunk_ids: list[str] = Field(default_factory=list)
+    refutation: dict | None = None
 
 
 class SummarizeRequest(BaseModel):

@@ -1,25 +1,26 @@
-import { Inter, Montserrat } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import type { Metadata } from "next";
+import { UIProvider } from "@/context/UIContext";
 import "./globals.css";
 
-const montserrat = Montserrat({
+const recoleta = Playfair_Display({
   subsets: ["latin"],
-  weight: ["500", "700"],
-  variable: "--font-montserrat",
+  weight: ["400"],
+  variable: "--font-recoleta",
   display: "swap",
 });
 
-const inter = Inter({
+const grotesk = Inter({
   subsets: ["latin"],
-  weight: ["500", "700"],
-  variable: "--font-inter",
+  weight: ["300", "400", "500"],
+  variable: "--font-grotesk",
   display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "DocIntel — Document Intelligence",
   description:
-    "GenAI document intelligence for multi-hundred-page engineering reports. Upload, index, and query with grounded RAG.",
+    "Domain-aware technical document intelligence. Upload, index, and query with grounded RAG.",
 };
 
 export default function RootLayout({
@@ -28,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${montserrat.variable} ${inter.variable}`}>
-        {children}
+    <html lang="en" className="bg-midnight">
+      <body className={`${recoleta.variable} ${grotesk.variable}`}>
+        <UIProvider>{children}</UIProvider>
       </body>
     </html>
   );

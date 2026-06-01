@@ -35,6 +35,7 @@ async def chat(
     Retrieve, rerank, generate, and verify with full source transparency.
 
     SSE events:
+    - ``pipeline`` — live stage updates (understanding, retrieval, rerank, etc.)
     - ``sources`` — retrieved chunks with scores (before generation)
     - ``token`` — incremental text chunk
     - ``done`` — includes sources + verification result

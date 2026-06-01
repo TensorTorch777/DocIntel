@@ -13,17 +13,24 @@ from app.models.schemas import (
     AnomalyResponse,
     ChatTask,
     EvidenceSufficiency,
+    RetrievedSource,
     SummarizeResponse,
     UnsupportedClaim,
     VerificationResult,
 )
 from app.services.answer_verification import AnswerVerificationService
+from app.services.claim_refutation import ClaimRefutation, detect_claim_refutation
 from app.services.llm import LLMService
+from app.services.pipeline_events import StageStatus, pipeline_event
 from app.services.procedural_reasoning import (
     PROCEDURAL_SYSTEM_PROMPT,
     build_procedural_user_prompt,
     generate_procedural_answer_from_evidence,
-    is_procedural_query,
+)
+from app.services.query_intent import (
+    AnswerTemplate,
+    QueryIntent,
+    classify_query_intent,
 )
 from app.services.retrieval import RetrievalResult, RetrievalService, format_context
 
@@ -46,6 +53,26 @@ Rules:
 12. For differentiate/compare questions, cite one definition source per register/flag.
 
 If the user requests JSON, output ONLY valid JSON with no preamble."""
+
+VERIFICATION_QA_PROMPT = """You are a document-grounded technical assistant validating user claims.
+
+Rules:
+1. Answer ONLY from retrieved context. Never use prior knowledge.
+2. If the user's stated meaning conflicts with sources, answer NO and give the correct meaning with [Source N] citations.
+3. If the user asks whether register X has role Y but sources assign Y to register Z, answer NO and name Z with citations.
+4. If the user's claim matches sources, answer YES with supporting citations.
+5. Be concise: state Yes/No first, then one short correction or confirmation paragraph.
+6. For register flags: cite the authoritative definition passage (bit name and meaning).
+7. Do not produce step-by-step procedures unless the user explicitly asked for steps.
+8. Do not abstain when sources explicitly identify a different register for the same role."""
+
+COMPARISON_QA_PROMPT = """You are a document-grounded technical assistant comparing registers, flags, or concepts.
+
+Rules:
+1. Answer ONLY from retrieved context with [Source N] citations per register/concept.
+2. Structure: one bullet per entity with its definition/behavior from sources.
+3. Explicitly state differences only when supported by sources.
+4. If evidence is insufficient for any entity, say so for that entity only."""
 
 CONSERVATIVE_QA_PROMPT = """You are a document-grounded technical assistant.
 
@@ -126,8 +153,49 @@ class RAGService:
         debug: bool = False,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Retrieve, generate, verify, optionally rewrite; yield SSE events."""
+        import asyncio
+
+        pipeline_snapshot: list[dict[str, Any]] = []
+
+        def _track(event: dict[str, Any]) -> None:
+            stage = event.get("stage")
+            for i, existing in enumerate(pipeline_snapshot):
+                if existing.get("stage") == stage:
+                    pipeline_snapshot[i] = event
+                    return
+            pipeline_snapshot.append(event)
+
         try:
-            result = await self._retrieval.retrieve(document_id, query, top_k)
+            yield (
+                "pipeline",
+                pipeline_event("understanding_query", StageStatus.RUNNING),
+            )
+            await asyncio.sleep(0)
+            intent_result = classify_query_intent(query)
+            understanding = pipeline_event(
+                "understanding_query",
+                StageStatus.COMPLETED,
+                detail={
+                    "intent": intent_result.intent.value,
+                    "pipeline": intent_result.pipeline.value,
+                },
+            )
+            _track(understanding)
+            yield ("pipeline", understanding)
+
+            result = None
+            async for kind, payload in self._retrieval.stream_retrieve(
+                document_id, query, top_k
+            ):
+                if kind == "pipeline":
+                    _track(payload)
+                    yield ("pipeline", payload)
+                elif kind == "result":
+                    result = payload
+
+            if result is None:
+                raise RuntimeError("Retrieval produced no result")
+
             sources = result.sources
             context = result.context
             sufficiency = result.sufficiency
@@ -143,6 +211,20 @@ class RAGService:
                 and not sufficiency.sufficient
             ):
                 gated_answer = sufficiency.message or "Insufficient retrieved evidence."
+                gate_gen = pipeline_event(
+                    "answer_generation",
+                    StageStatus.SKIPPED,
+                    detail={"reason": "evidence gate"},
+                )
+                yield ("pipeline", gate_gen)
+                _track(gate_gen)
+                gate_verify = pipeline_event(
+                    "verification",
+                    StageStatus.SKIPPED,
+                    detail={"reason": "evidence gate"},
+                )
+                yield ("pipeline", gate_verify)
+                _track(gate_verify)
                 yield ("token", {"content": gated_answer})
                 done_payload: dict[str, Any] = {
                     "status": "complete",
@@ -152,6 +234,7 @@ class RAGService:
                     "evidence_sufficiency": sufficiency.model_dump(),
                     "retrieval_confidence": sufficiency.confidence,
                     "gated": True,
+                    "pipeline": pipeline_snapshot,
                 }
                 if debug:
                     done_payload["retrieval_debug"] = result.debug.to_dict()
@@ -162,7 +245,20 @@ class RAGService:
             temperature = self._temperature_for_query(query, task)
 
             answer_parts: list[str] = []
-            if task == ChatTask.QA and self._settings.enable_procedural_reasoning and is_procedural_query(query):
+            refutation = detect_claim_refutation(result.chunks, query)
+            use_procedural = (
+                task == ChatTask.QA
+                and self._settings.enable_procedural_reasoning
+                and intent_result.intent == QueryIntent.PROCEDURAL
+            )
+
+            yield ("pipeline", pipeline_event("answer_generation", StageStatus.RUNNING))
+            await asyncio.sleep(0)
+
+            if refutation and task == ChatTask.QA:
+                answer = self._format_refutation_answer(refutation, sources)
+                yield ("token", {"content": answer})
+            elif use_procedural:
                 answer = await self._generate_procedural_answer(query, result)
                 yield ("token", {"content": answer})
             else:
@@ -172,14 +268,35 @@ class RAGService:
                     answer_parts.append(token)
                     yield ("token", {"content": token})
                 answer = "".join(answer_parts)
+
+            gen_detail: dict[str, Any] = {"mode": intent_result.pipeline.value}
+            if refutation:
+                gen_detail["refutation"] = True
+            gen_done = pipeline_event(
+                "answer_generation",
+                StageStatus.COMPLETED,
+                detail=gen_detail,
+            )
+            _track(gen_done)
+            yield ("pipeline", gen_done)
+
             final_answer = answer
             verification = None
 
+            yield ("pipeline", pipeline_event("verification", StageStatus.RUNNING))
+            await asyncio.sleep(0)
+
+            verify_detail: dict[str, Any] = {"executed": False, "skipped": True}
             if self._settings.enable_answer_verification and answer.strip():
                 do_verify, skip_reason = self._verifier.should_verify(
                     query, answer, result.chunks, gated=False,
-                    procedural=is_procedural_query(query),
+                    procedural=intent_result.intent == QueryIntent.PROCEDURAL,
                 )
+                verify_detail = {
+                    "executed": do_verify,
+                    "skipped": not do_verify,
+                    "skip_reason": skip_reason if not do_verify else None,
+                }
                 if do_verify:
                     verification = await self._verifier.verify(
                         context, query, answer, chunks=result.chunks,
@@ -198,6 +315,18 @@ class RAGService:
                             exc_info=True,
                         )
 
+            if verification:
+                verify_detail["supported"] = verification.supported
+                verify_detail["risk"] = verification.hallucination_risk
+
+            verify_done = pipeline_event(
+                "verification",
+                StageStatus.COMPLETED if verify_detail.get("executed") else StageStatus.SKIPPED,
+                detail=verify_detail,
+            )
+            _track(verify_done)
+            yield ("pipeline", verify_done)
+
             done_payload = {
                 "status": "complete",
                 "document_id": document_id,
@@ -206,6 +335,7 @@ class RAGService:
                 "final_answer": final_answer if final_answer != answer else None,
                 "evidence_sufficiency": sufficiency.model_dump(),
                 "retrieval_confidence": sufficiency.confidence,
+                "pipeline": pipeline_snapshot,
             }
             if verification:
                 done_payload["verification"] = verification.model_dump()
@@ -243,12 +373,16 @@ class RAGService:
         ):
             return result.sufficiency.message or "Insufficient retrieved evidence."
 
-        _, user_prompt = self._build_prompts(ChatTask.QA, query, result.context)
-        if self._settings.enable_procedural_reasoning and is_procedural_query(query):
+        intent_result = classify_query_intent(query)
+        refutation = detect_claim_refutation(result.chunks, query)
+        if refutation:
+            return self._format_refutation_answer(refutation, result.sources)
+        if self._settings.enable_procedural_reasoning and intent_result.intent == QueryIntent.PROCEDURAL:
             answer = await self._generate_procedural_answer(query, result)
         else:
+            system_prompt, user_prompt = self._prompts_for_intent(intent_result, query, result.context)
             answer = await self._llm.complete(
-                QA_SYSTEM_PROMPT,
+                system_prompt,
                 user_prompt,
                 temperature=self._temperature_for_query(query, ChatTask.QA),
             )
@@ -256,7 +390,7 @@ class RAGService:
             try:
                 do_verify, _ = self._verifier.should_verify(
                     query, answer, result.chunks, gated=False,
-                    procedural=is_procedural_query(query),
+                    procedural=intent_result.intent == QueryIntent.PROCEDURAL,
                 )
                 if do_verify:
                     v = await self._verifier.verify(
@@ -360,13 +494,50 @@ class RAGService:
         )
 
     @staticmethod
+    def _format_refutation_answer(
+        refutation: ClaimRefutation,
+        sources: list[RetrievedSource],
+    ) -> str:
+        source_index = refutation.source_index
+        for source in sources:
+            if source.chunk_id == refutation.chunk.chunk_id:
+                source_index = source.source_index
+                break
+        page = refutation.chunk.page_number
+        return (
+            f"NO. {refutation.evidence_text.strip()} "
+            f"[Source {source_index}, p. {page}]"
+        )
+
+    @staticmethod
+    def _prompts_for_intent(
+        intent_result,
+        query: str,
+        context: str,
+    ) -> tuple[str, str]:
+        """Select system prompt by classified intent."""
+        template = intent_result.answer_template
+        if template == AnswerTemplate.VERIFICATION:
+            system = VERIFICATION_QA_PROMPT
+        elif template == AnswerTemplate.COMPARISON:
+            system = COMPARISON_QA_PROMPT
+        else:
+            system = QA_SYSTEM_PROMPT
+        user = f"Sources:\n{context}\n\nQuestion: {query}"
+        return system, user
+
+    @staticmethod
     def _build_prompts(task: ChatTask, query: str, context: str) -> tuple[str, str]:
         json_note = ""
         if _JSON_QUERY.search(query):
             json_note = "\n\nRespond with ONLY valid JSON. No markdown fences. No preamble."
 
+        if task == ChatTask.QA:
+            intent_result = classify_query_intent(query)
+            system, user = RAGService._prompts_for_intent(intent_result, query, context)
+            return system, user + json_note
+
         prompts = {
-            ChatTask.QA: (QA_SYSTEM_PROMPT, f"Sources:\n{context}\n\nQuestion: {query}{json_note}"),
             ChatTask.SUMMARIZE: (
                 SUMMARIZE_SYSTEM_PROMPT,
                 f"Sources:\n{context}\n\nSummarize.{json_note}" + (f"\n\nFocus: {query}" if query else ""),

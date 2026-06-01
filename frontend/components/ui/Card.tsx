@@ -10,7 +10,7 @@ export function Card({ className, elevated, children, ...props }: CardProps) {
     <div
       className={cn(
         "rounded-card p-card",
-        elevated ? "bg-paper-white border border-ghost-border" : "bg-cloud-canvas",
+        elevated ? "obsidian-glass" : "bg-charcoal shadow-inset",
         className
       )}
       {...props}

@@ -7,17 +7,17 @@ interface BadgeProps {
 }
 
 const styles = {
-  default: "bg-cloud-canvas text-muted-ash border-ghost-border",
-  accent: "bg-electric-violet/10 text-electric-violet border-electric-violet/20",
-  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  warning: "bg-amber-50 text-amber-700 border-amber-200",
+  default: "bg-charcoal text-slate border-charcoal",
+  accent: "bg-charcoal text-iridescent border-charcoal",
+  success: "bg-charcoal text-ghost-ash border-ghost-ash/20",
+  warning: "bg-charcoal text-accent border-accent/30",
 };
 
 export function Badge({ children, variant = "default", className }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-pill border px-3 py-1 text-caption font-medium",
+        "inline-flex items-center rounded-btn border px-3 py-1 text-caption font-medium",
         styles[variant],
         className
       )}

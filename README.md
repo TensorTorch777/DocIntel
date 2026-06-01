@@ -25,6 +25,8 @@ Unlike generic RAG demos, DocIntel combines **keyword + vector hybrid retrieval*
 
 ## Architecture
 
+> **Interactive version:** Run the frontend (`npm run dev`) and open the [**Architecture** section](http://localhost:3000/#architecture) or [/architecture](http://localhost:3000/architecture) for an animated, clickable pipeline. GitHub renders the diagram below as static Markdown.
+
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'fontSize': '16px', 'fontFamily': 'Segoe UI, system-ui, sans-serif', 'background': '#F8FAFC', 'lineColor': '#1E293B', 'primaryTextColor': '#1E293B', 'clusterBkg': '#F1F5F9', 'clusterBorder': '#94A3B8', 'titleColor': '#334155'}}}%%
 flowchart TB

@@ -3,6 +3,7 @@ import type {
   ChatRequest,
   DocumentInfo,
   EvidenceSufficiency,
+  PipelineStageEvent,
   RetrievedSource,
   RetrievalDebug,
   SummarizeResponse,
@@ -73,6 +74,7 @@ export function streamChat(
   onSources: (sources: RetrievedSource[]) => void,
   onDebug: (debug: RetrievalDebug) => void,
   onRevision: (content: string) => void,
+  onPipeline: (stage: PipelineStageEvent) => void,
   onDone: (payload: {
     sources?: RetrievedSource[];
     verification?: VerificationResult;
@@ -81,6 +83,7 @@ export function streamChat(
     evidence_sufficiency?: EvidenceSufficiency;
     retrieval_confidence?: string;
     gated?: boolean;
+    pipeline?: PipelineStageEvent[];
   }) => void,
   onError: (message: string) => void
 ): () => void {
@@ -139,12 +142,19 @@ export function streamChat(
               evidence_sufficiency?: EvidenceSufficiency;
               retrieval_confidence?: string;
               gated?: boolean;
+              pipeline?: PipelineStageEvent[];
+              stage?: string;
+              label?: string;
+              status?: PipelineStageEvent["status"];
+              detail?: Record<string, unknown>;
             };
 
             if (event === "sources" && parsed.sources) {
               onSources(parsed.sources);
             } else if (event === "debug") {
               onDebug(parsed as unknown as RetrievalDebug);
+            } else if (event === "pipeline" && parsed.stage) {
+              onPipeline(parsed as PipelineStageEvent);
             } else if (event === "token" && parsed.content) {
               onToken(parsed.content);
             } else if (event === "revision" && parsed.content) {
@@ -158,6 +168,7 @@ export function streamChat(
                 evidence_sufficiency: parsed.evidence_sufficiency,
                 retrieval_confidence: parsed.retrieval_confidence,
                 gated: parsed.gated,
+                pipeline: parsed.pipeline,
               });
             } else if (event === "error") {
               onError(parsed.message ?? "Stream error");

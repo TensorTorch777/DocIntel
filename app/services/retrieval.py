@@ -2,11 +2,18 @@
 
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import Settings
 from app.services.pipeline_config import PipelineConfig
+from app.services.pipeline_events import (
+    StageStatus,
+    expansion_terms,
+    pipeline_event,
+    top_rerank_scores,
+)
 from app.models.schemas import EvidenceCoverage, EvidenceSufficiency, RetrievedSource
 from app.services.bm25_store import BM25Store
 from app.services.definitional_boost import apply_definitional_boost
@@ -198,10 +205,27 @@ class RetrievalService:
         top_k: int | None = None,
         pipeline: PipelineConfig | None = None,
     ) -> RetrievalResult:
-        """
-        Full pipeline:
-        definition resolver → pinned chunks + vector + BM25 → RRF → boost → rerank → pin merge
-        """
+        """Full hybrid retrieval pipeline (consumes stream_retrieve)."""
+        result: RetrievalResult | None = None
+        async for kind, payload in self.stream_retrieve(
+            document_id, user_query, top_k=top_k, pipeline=pipeline
+        ):
+            if kind == "result":
+                result = payload
+        if result is None:
+            raise RuntimeError("Retrieval stream ended without result")
+        return result
+
+    async def stream_retrieve(
+        self,
+        document_id: str,
+        user_query: str,
+        top_k: int | None = None,
+        pipeline: PipelineConfig | None = None,
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """Yield pipeline stage events, then a final RetrievalResult."""
+        import asyncio
+
         t0 = time.perf_counter()
         timings = RetrievalTimings()
 
@@ -217,10 +241,20 @@ class RetrievalService:
         final_k = top_k or self._settings.retrieval_top_k
         candidate_k = max(final_k, self._settings.retrieval_candidate_k)
 
+        yield "pipeline", pipeline_event("query_expansion", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         original_query, core_query, retrieval_query = await expand_query(
             user_query,
             llm_service=self._llm,
             use_llm=self._settings.enable_query_rewrite_llm,
+        )
+        yield "pipeline", pipeline_event(
+            "query_expansion",
+            StageStatus.COMPLETED,
+            detail={
+                "expanded_terms": expansion_terms(core_query, retrieval_query),
+                "core_query": core_query,
+            },
         )
 
         entities = extract_entities(core_query)
@@ -234,9 +268,10 @@ class RetrievalService:
             )
         )
 
-        # 1. Register definition resolver (scan full BM25 corpus)
         pinned: list[RetrievedChunk] = []
         pinned_debug: list[RetrievedSource] = []
+        yield "pipeline", pipeline_event("definition_resolution", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         if use_def_resolver and register_entities:
             corpus = self._bm25.get_all_chunks(document_id)
             if corpus:
@@ -256,8 +291,14 @@ class RetrievalService:
                     len(pinned),
                     register_entities,
                 )
+        yield "pipeline", pipeline_event(
+            "definition_resolution",
+            StageStatus.COMPLETED if pinned else StageStatus.SKIPPED,
+            detail={"pinned_count": len(pinned), "entities": list(register_entities)},
+        )
 
-        # Vector retrieval
+        yield "pipeline", pipeline_event("vector_retrieval", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         query_embedding = self._embeddings.embed_query(retrieval_query)
         vector_chunks = self._vector_store.retrieve(
             document_id, query_embedding, top_k=candidate_k
@@ -265,24 +306,39 @@ class RetrievalService:
         for c in vector_chunks:
             c.metadata["vector_score"] = c.score
             c.metadata["retrieval_method"] = "vector"
+        yield "pipeline", pipeline_event(
+            "vector_retrieval",
+            StageStatus.COMPLETED,
+            detail={"chunk_count": len(vector_chunks)},
+        )
 
-        # BM25 retrieval
         bm25_chunks: list[RetrievedChunk] = []
         if use_hybrid:
+            yield "pipeline", pipeline_event("bm25_retrieval", StageStatus.RUNNING)
+            await asyncio.sleep(0)
             bm25_chunks = self._bm25.search(document_id, retrieval_query, top_k=candidate_k)
+            yield "pipeline", pipeline_event(
+                "bm25_retrieval",
+                StageStatus.COMPLETED,
+                detail={"chunk_count": len(bm25_chunks)},
+            )
+        else:
+            yield "pipeline", pipeline_event(
+                "bm25_retrieval",
+                StageStatus.SKIPPED,
+                detail={"reason": "hybrid retrieval disabled"},
+            )
 
-        # RRF merge
+        yield "pipeline", pipeline_event("rrf_fusion", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         if bm25_chunks:
             merged = _rrf_merge(vector_chunks, bm25_chunks)[: candidate_k * 2]
         else:
             merged = vector_chunks
-
-        # Inject pinned definition chunks (dedupe, high priority)
         if pinned:
             pinned_ids = {c.chunk_id for c in pinned}
             merged = pinned + [c for c in merged if c.chunk_id not in pinned_ids]
 
-        # Entity boost
         boosted = merged
         if use_entity_boost:
             boosted = apply_entity_boost(
@@ -290,18 +346,22 @@ class RetrievalService:
                 entities,
                 boost_per_hit=self._settings.entity_boost_weight,
             )
-
-        # Definitional boost for register/flag queries
         if use_def_boost:
             boosted = apply_definitional_boost(
                 boosted,
                 core_query,
                 boost_weight=self._settings.definitional_boost_weight,
             )
+        yield "pipeline", pipeline_event(
+            "rrf_fusion",
+            StageStatus.COMPLETED,
+            detail={"merged_count": len(merged)},
+        )
 
         timings.retrieval_ms = (time.perf_counter() - t0) * 1000.0
 
-        # Cross-encoder rerank (pool includes pinned; merge guarantees they survive)
+        yield "pipeline", pipeline_event("cross_encoder_reranking", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         t_rerank = time.perf_counter()
         rerank_pool = boosted
         rerank_k = min(len(rerank_pool), candidate_k + len(pinned))
@@ -310,10 +370,20 @@ class RetrievalService:
         else:
             reranked_pool = rerank_pool[:rerank_k]
         timings.rerank_ms = (time.perf_counter() - t_rerank) * 1000.0
+        yield "pipeline", pipeline_event(
+            "cross_encoder_reranking",
+            StageStatus.COMPLETED if use_rerank else StageStatus.SKIPPED,
+            detail={
+                "top_scores": top_rerank_scores(reranked_pool),
+                "pool_size": len(rerank_pool),
+            },
+        )
 
         final_chunks = merge_pinned_with_reranked(pinned, reranked_pool, top_k=final_k)
         final_chunks = sort_definition_first(final_chunks, register_entities)
 
+        yield "pipeline", pipeline_event("evidence_sufficiency", StageStatus.RUNNING)
+        await asyncio.sleep(0)
         pinned_ids = [c.chunk_id for c in pinned]
         sufficiency_raw = assess_sufficiency(
             final_chunks, user_query, pinned_chunk_ids=pinned_ids
@@ -338,9 +408,22 @@ class RetrievalService:
             authoritative_definitions_found=sufficiency_raw.authoritative_definitions_found,
             missing_definition_entities=sufficiency_raw.missing_definition_entities,
             pinned_chunk_ids=sufficiency_raw.pinned_chunk_ids,
+            refutation=(
+                sufficiency_raw.to_dict().get("refutation")
+                if sufficiency_raw.refutation
+                else None
+            ),
+        )
+        yield "pipeline", pipeline_event(
+            "evidence_sufficiency",
+            StageStatus.COMPLETED,
+            detail={
+                "confidence": sufficiency.confidence,
+                "sufficient": sufficiency.sufficient,
+                "gated": not sufficiency.sufficient,
+            },
         )
 
-        # Build debug info
         debug = RetrievalDebugInfo(
             original_query=original_query,
             core_query=core_query,
@@ -398,7 +481,7 @@ class RetrievalService:
             entity_list,
         )
 
-        return RetrievalResult(
+        yield "result", RetrievalResult(
             chunks=final_chunks,
             context=context,
             sources=sources,
