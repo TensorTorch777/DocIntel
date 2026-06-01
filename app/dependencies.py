@@ -3,7 +3,6 @@
 from functools import lru_cache
 
 from app.config import Settings, get_settings
-from app.services.benchmark import BenchmarkService
 from app.services.bm25_store import BM25Store
 from app.services.chunking import ChunkingService
 from app.services.embedding import EmbeddingService
@@ -73,11 +72,6 @@ def get_rag_service() -> RAGService:
         retrieval_service=get_retrieval_service(),
         llm_service=get_llm_service(),
     )
-
-
-@lru_cache
-def get_benchmark_service() -> BenchmarkService:
-    return BenchmarkService(get_rag_service())
 
 
 @lru_cache

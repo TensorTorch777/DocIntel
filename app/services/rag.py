@@ -3,12 +3,11 @@
 import json
 import logging
 import re
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 from app.config import Settings
-from benchmark.pipeline import PipelineConfig, PipelineMode
+from app.services.pipeline_config import PipelineConfig
 from app.models.schemas import (
     AnomalyFlag,
     AnomalyResponse,
@@ -322,104 +321,10 @@ class RAGService:
         top_k: int | None = None,
         pipeline: PipelineConfig | None = None,
     ):
-        """Expose retrieval for benchmark/debug without generation."""
+        """Expose retrieval for debug without generation."""
         return await self._retrieval.retrieve(
             document_id, query, top_k, pipeline=pipeline
         )
-
-    async def evaluate_query(
-        self,
-        document_id: str,
-        query: str,
-        pipeline: PipelineConfig | None = None,
-        top_k: int | None = None,
-    ) -> dict[str, Any]:
-        """Run retrieve → answer → verify for benchmark evaluation."""
-        cfg = pipeline or PipelineConfig.from_mode(PipelineMode.FULL)
-
-        t_start = time.perf_counter()
-        result = await self._retrieval.retrieve(
-            document_id, query, top_k, pipeline=cfg
-        )
-        retrieval_ms = result.timings.retrieval_ms
-        rerank_ms = result.timings.rerank_ms
-
-        gated = False
-        answer = ""
-        generation_ms = 0.0
-        verification_ms = 0.0
-        verification: VerificationResult | None = None
-        verification_skipped = False
-        verification_skip_reason = ""
-
-        if cfg.evidence_gate and not result.sufficiency.sufficient:
-            gated = True
-            answer = result.sufficiency.message or "Insufficient retrieved evidence."
-        else:
-            t_gen = time.perf_counter()
-            if self._settings.enable_procedural_reasoning and is_procedural_query(query):
-                answer = await self._generate_procedural_answer(query, result)
-            else:
-                _, user_prompt = self._build_prompts(ChatTask.QA, query, result.context)
-                answer = await self._llm.complete(
-                    QA_SYSTEM_PROMPT,
-                    user_prompt,
-                    temperature=self._temperature_for_query(query, ChatTask.QA),
-                )
-            generation_ms = (time.perf_counter() - t_gen) * 1000.0
-
-            if cfg.verification and answer.strip():
-                procedural = is_procedural_query(query)
-                do_verify, verification_skip_reason = self._verifier.should_verify(
-                    query, answer, result.chunks, gated=False, procedural=procedural,
-                )
-                if do_verify:
-                    t_ver = time.perf_counter()
-                    risk = self._verifier.assess_risk(query, answer, result.chunks)
-                    verification = await self._verifier.verify(
-                        result.context, query, answer, chunks=result.chunks,
-                        lightweight=risk == "medium",
-                    )
-                    if verification is not None and cfg.rewrite:
-                        try:
-                            answer, verification = await self._apply_verification_actions(
-                                result.context, query, answer, verification
-                            )
-                        except Exception:
-                            logger.warning("Benchmark verification actions failed", exc_info=True)
-                    verification_ms = (time.perf_counter() - t_ver) * 1000.0
-                else:
-                    verification_skipped = True
-
-        total_ms = (time.perf_counter() - t_start) * 1000.0
-
-        return {
-            "answer": answer,
-            "gated": gated,
-            "retrieved_chunks": [c.text for c in result.chunks],
-            "chunk_ids": [c.chunk_id for c in result.chunks],
-            "sources": [s.model_dump() for s in result.sources],
-            "rerank_scores": [
-                float(c.metadata.get("rerank_score", c.score)) for c in result.chunks
-            ],
-            "retrieval_confidence": result.sufficiency.confidence,
-            "evidence_sufficiency": result.sufficiency.model_dump(),
-            "verification": verification.model_dump() if verification else None,
-            "verification_skipped": verification_skipped,
-            "verification_skip_reason": verification_skip_reason,
-            "merged_retrieved_chunks": [
-                c.get("excerpt", "")
-                for c in result.debug.to_dict().get("merged_candidates", [])
-            ],
-            "retrieval_debug": result.debug.to_dict(),
-            "latency": {
-                "retrieval_ms": retrieval_ms,
-                "rerank_ms": rerank_ms,
-                "generation_ms": generation_ms,
-                "verification_ms": verification_ms,
-                "total_ms": total_ms,
-            },
-        }
 
     async def verify_answer_public(
         self, context: str, query: str, answer: str

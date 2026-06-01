@@ -4,7 +4,7 @@
 
 **Domain-aware technical RAG for large-scale manuals**
 
-Hybrid retrieval · evidence gating · verification · 516-case benchmark suite
+Hybrid retrieval · evidence gating · verification
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.com/)
@@ -21,40 +21,38 @@ DocIntel is a **document-grounded question-answering system** built for dense te
 
 Unlike generic RAG demos, DocIntel combines **keyword + vector hybrid retrieval**, **cross-encoder reranking**, **authoritative definition pinning**, **evidence sufficiency gating**, and **selective answer verification** to reduce hallucinations while keeping latency practical on local hardware (Ollama / Qwen2.5).
 
-**Primary evaluation document:** Intel SDM–style manual (`516` benchmark cases).
-
 ---
 
 ## Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '17px', 'fontFamily': 'Segoe UI, system-ui, sans-serif'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '16px', 'fontFamily': 'Segoe UI, system-ui, sans-serif', 'lineColor': '#94A3B8'}}}%%
 flowchart TB
-    Q(["🔍  User Query"])
+    Q(["User Query"])
 
-    subgraph S1["①  QUERY UNDERSTANDING"]
+    subgraph S1["Query Understanding"]
         direction TB
-        QE["📝  Query Expansion<br/>register aliases · entity detection"]
+        QE["Query Expansion<br/>register aliases · entity detection"]
     end
 
-    subgraph S2["②  RETRIEVAL PIPELINE"]
+    subgraph S2["Retrieval Pipeline"]
         direction TB
-        HR["🔎  Hybrid Retrieval<br/>HNSW vector + BM25 keyword"]
-        RRF["🔀  RRF Fusion<br/>reciprocal rank merge"]
-        RER["🎯  Cross-Encoder Rerank<br/>bge-reranker-large"]
-        DR["📌  Definition Resolver<br/>pin authoritative definitions"]
+        HR["Hybrid Retrieval<br/>HNSW vector + BM25 keyword"]
+        RRF["RRF Fusion<br/>reciprocal rank merge"]
+        RER["Cross-Encoder Rerank<br/>bge-reranker-large"]
+        DR["Definition Resolver<br/>pin authoritative definitions"]
     end
 
-    subgraph S3["③  GROUNDED GENERATION"]
+    subgraph S3["Grounded Generation"]
         direction TB
-        EG{"🛡️  Evidence Gate<br/>weighted coverage check"}
-        LLM["🤖  LLM Generation<br/>Ollama · Qwen2.5"]
+        EG{"Evidence Gate<br/>weighted coverage check"}
+        LLM["LLM Generation<br/>Ollama · Qwen2.5"]
     end
 
-    subgraph S4["④  QUALITY & OUTPUT"]
+    subgraph S4["Quality & Output"]
         direction TB
-        VER["✅  Verification<br/>selective · cached · risk-based"]
-        ANS(["✨  Final Answer<br/>cited · grounded"])
+        VER["Verification<br/>selective · cached · risk-based"]
+        ANS(["Final Answer<br/>cited · grounded"])
     end
 
     Q --> QE
@@ -68,24 +66,24 @@ flowchart TB
     LLM --> VER
     VER --> ANS
 
-    style Q fill:#6366f1,stroke:#4338ca,color:#ffffff,stroke-width:3px
-    style ANS fill:#10b981,stroke:#059669,color:#ffffff,stroke-width:3px
+    style Q fill:#4338CA,stroke:#3730A3,color:#FFFFFF,stroke-width:2px
+    style ANS fill:#047857,stroke:#065F46,color:#FFFFFF,stroke-width:2px
 
-    style S1 fill:#eef2ff,stroke:#6366f1,color:#312e81,stroke-width:2px
-    style S2 fill:#ecfeff,stroke:#0891b2,color:#164e63,stroke-width:2px
-    style S3 fill:#f0fdf4,stroke:#16a34a,color:#14532d,stroke-width:2px
-    style S4 fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:2px
+    style S1 fill:#F5F3FF,stroke:#A5B4FC,color:#312E81,stroke-width:1.5px
+    style S2 fill:#EFF6FF,stroke:#93C5FD,color:#1E3A5F,stroke-width:1.5px
+    style S3 fill:#ECFDF5,stroke:#6EE7B7,color:#064E3B,stroke-width:1.5px
+    style S4 fill:#FFFBEB,stroke:#FCD34D,color:#78350F,stroke-width:1.5px
 
-    style QE fill:#818cf8,stroke:#6366f1,color:#ffffff
-    style HR fill:#22d3ee,stroke:#0891b2,color:#083344
-    style RRF fill:#06b6d4,stroke:#0e7490,color:#ffffff
-    style RER fill:#38bdf8,stroke:#0284c7,color:#ffffff
-    style DR fill:#14b8a6,stroke:#0d9488,color:#ffffff
+    style QE fill:#FFFFFF,stroke:#6366F1,color:#312E81,stroke-width:1.5px
+    style HR fill:#FFFFFF,stroke:#3B82F6,color:#1E3A5F,stroke-width:1.5px
+    style RRF fill:#FFFFFF,stroke:#2563EB,color:#1E3A5F,stroke-width:1.5px
+    style RER fill:#FFFFFF,stroke:#1D4ED8,color:#1E3A5F,stroke-width:1.5px
+    style DR fill:#FFFFFF,stroke:#0EA5E9,color:#0C4A6E,stroke-width:1.5px
 
-    style EG fill:#fbbf24,stroke:#d97706,color:#78350f,stroke-width:2px
-    style LLM fill:#4ade80,stroke:#16a34a,color:#14532d
+    style EG fill:#FEF3C7,stroke:#D97706,color:#78350F,stroke-width:1.5px
+    style LLM fill:#FFFFFF,stroke:#059669,color:#064E3B,stroke-width:1.5px
 
-    style VER fill:#fb923c,stroke:#ea580c,color:#ffffff
+    style VER fill:#FFFFFF,stroke:#EA580C,color:#7C2D12,stroke-width:1.5px
 ```
 
 | Stage | Implementation |
@@ -97,9 +95,7 @@ flowchart TB
 | Definition resolver | Pins authoritative register-definition chunks |
 | Evidence gate | Weighted coverage thresholds before generation |
 | LLM | OpenAI-compatible API (Ollama `qwen2.5:7b`) |
-| Verification | Risk-based selective verify + cache (Sprint 3) |
-
-See [docs/architecture.md](docs/architecture.md) for retrieval, grounding, and benchmark flows.
+| Verification | Risk-based selective verify + cache |
 
 ---
 
@@ -110,53 +106,8 @@ See [docs/architecture.md](docs/architecture.md) for retrieval, grounding, and b
 - **Register definition resolver** — pins authoritative definition passages
 - **Evidence sufficiency gating** — abstains when coverage is insufficient
 - **Procedural reasoning** — query-aware step extraction and ordering
-- **Selective verification** — skips low-risk / authoritative-definition answers (~50% of cases)
+- **Selective verification** — skips low-risk / authoritative-definition answers
 - **Hallucination mitigation** — claim verification + conservative rewrite path
-- **Benchmark suite** — 516 cases across 6 categories with CSV/JSON exports and reports
-
----
-
-## Benchmark Results
-
-**Latest run:** `benchmark/results/sprint3_full_516/` (2026-05-31)
-
-| Metric | Result |
-|--------|-------:|
-| Cases | 516 |
-| Recall@K | 95.1% |
-| MRR | 0.848 |
-| NDCG@K | 94.8% |
-| Hallucination rate | 4.5% |
-| Citation accuracy | 70.3% |
-| Citation coverage / sentence | 68.4% |
-| Abstention precision / recall | 38.7% / 95.8% |
-| Avg latency | 1854 ms |
-| Verification latency | 424 ms (50.2% cases skipped) |
-
-Full report: [benchmark/reports/benchmark_report.md](benchmark/reports/benchmark_report.md)
-
-<details>
-<summary><strong>Category breakdown</strong></summary>
-
-| Category | Recall@K | Must-contain | Hallucination |
-|----------|---------:|-------------:|--------------:|
-| definition_queries | 95.6% | 61.9% | 6.8% |
-| procedural_queries | 79.3% | 63.5% | — |
-| multihop_queries | 97.5% | 62.5% | — |
-| entity_collision_queries | 95.8% | 40.0% | 0% |
-| adversarial_queries | 90.9% | 100% | — |
-| insufficient_evidence_queries | 100% | 100% | — |
-
-</details>
-
----
-
-## Screenshots
-
-<!-- Add screenshots after deployment -->
-| Chat UI | Benchmark dashboard |
-|---------|---------------------|
-| _Screenshot placeholder_ | _Screenshot placeholder_ |
 
 ---
 
@@ -201,20 +152,6 @@ npm run dev
 
 Open **http://localhost:3000** — upload a PDF, wait for indexing, then chat.
 
-### 4. Run benchmarks
-
-```bash
-# Full 516-case suite (requires indexed document)
-.venv/bin/python benchmark_runner.py \
-  --document-id <YOUR_DOCUMENT_ID> \
-  --output-dir benchmark/results/latest
-
-# Generate reports
-.venv/bin/python benchmark/generate_report.py
-.venv/bin/python benchmark/definition_failure_analysis.py
-.venv/bin/python benchmark/citation_audit.py
-```
-
 ---
 
 ## Project structure
@@ -223,27 +160,8 @@ Open **http://localhost:3000** — upload a PDF, wait for indexing, then chat.
 DocIntel/
 ├── app/                    # FastAPI backend (RAG, retrieval, verification)
 ├── frontend/               # Next.js 14 UI
-├── benchmark/              # 516-case suite, metrics, reports
-│   ├── benchmark_cases.json
-│   ├── reports/            # Auto-generated RC reports
-│   └── results/            # JSON + CSV run outputs
-├── docs/                   # Architecture, resume bullets, audit
-├── benchmark_runner.py     # CLI benchmark entry point
 └── main.py                 # API entry point
 ```
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [docs/architecture.md](docs/architecture.md) | Retrieval, grounding, benchmark flows |
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | Sprint 1–3 changelog and metrics |
-| [benchmark/reports/benchmark_report.md](benchmark/reports/benchmark_report.md) | Latest benchmark summary |
-| [benchmark/reports/definition_failures.md](benchmark/reports/definition_failures.md) | Definition accuracy investigation |
-| [benchmark/reports/citation_audit.md](benchmark/reports/citation_audit.md) | Citation coverage audit |
-| [docs/repo_audit.md](docs/repo_audit.md) | Release-candidate code audit |
 
 ---
 

@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers.benchmark import router as benchmark_router
 from app.routers.chat import router as chat_router
 from app.routers.documents import router as documents_router
 from app.routers.upload import router as upload_router
@@ -66,7 +65,6 @@ def create_app() -> FastAPI:
     app.include_router(upload_router)
     app.include_router(chat_router)
     app.include_router(documents_router)
-    app.include_router(benchmark_router)
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict[str, str]:

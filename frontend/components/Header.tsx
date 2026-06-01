@@ -37,11 +37,6 @@ export function Header({ apiOnline, onUploadClick }: HeaderProps) {
               Workspace
             </Button>
           </Link>
-          <Link href="/benchmark">
-            <Button variant="ghost" className="px-4 py-1.5 text-caption">
-              Benchmark
-            </Button>
-          </Link>
           <Link href="#features">
             <Button variant="ghost" className="px-4 py-1.5 text-caption">
               Features

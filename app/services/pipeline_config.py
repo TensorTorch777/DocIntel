@@ -1,11 +1,11 @@
-"""Retrieval and RAG pipeline mode presets for baseline comparison."""
+"""Retrieval pipeline mode presets for optional runtime overrides."""
 
 from dataclasses import dataclass
 from enum import Enum
 
 
 class PipelineMode(str, Enum):
-    """Benchmark pipeline presets."""
+    """Pipeline presets from minimal retrieval to full RAG."""
 
     VECTOR_ONLY = "vector_only"
     VECTOR_BM25 = "vector_bm25"
@@ -15,7 +15,7 @@ class PipelineMode(str, Enum):
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    """Resolved pipeline flags for a benchmark run."""
+    """Resolved pipeline flags for a retrieval run."""
 
     hybrid: bool
     rerank: bool
@@ -71,18 +71,3 @@ class PipelineConfig:
             ),
         }
         return presets[mode]
-
-    @property
-    def label(self) -> str:
-        labels = {
-            (False, False): "A · Vector only",
-            (True, False): "B · Vector + BM25",
-            (True, True): "C · Hybrid + rerank",
-        }
-        if self.evidence_gate and self.verification:
-            return "D · Full pipeline"
-        key = (self.hybrid, self.rerank)
-        return labels.get(key, "Custom")
-
-
-ALL_MODES: list[PipelineMode] = list(PipelineMode)

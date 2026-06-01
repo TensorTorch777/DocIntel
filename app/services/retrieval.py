@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import Settings
-from benchmark.pipeline import PipelineConfig
+from app.services.pipeline_config import PipelineConfig
 from app.models.schemas import EvidenceCoverage, EvidenceSufficiency, RetrievedSource
 from app.services.bm25_store import BM25Store
 from app.services.definitional_boost import apply_definitional_boost
