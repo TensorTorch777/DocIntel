@@ -26,64 +26,72 @@ Unlike generic RAG demos, DocIntel combines **keyword + vector hybrid retrieval*
 ## Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '16px', 'fontFamily': 'Segoe UI, system-ui, sans-serif', 'lineColor': '#94A3B8'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '16px', 'fontFamily': 'Segoe UI, system-ui, sans-serif', 'background': '#F8FAFC', 'lineColor': '#1E293B', 'primaryTextColor': '#1E293B', 'clusterBkg': '#F1F5F9', 'clusterBorder': '#94A3B8', 'titleColor': '#334155'}}}%%
 flowchart TB
-    Q(["User Query"])
-
-    subgraph S1["Query Understanding"]
+    subgraph CANVAS[" "]
         direction TB
-        QE["Query Expansion<br/>register aliases · entity detection"]
+
+        Q(["User Query"])
+
+        subgraph S1["Query Understanding"]
+            direction TB
+            QE["Query Expansion<br/>register aliases · entity detection"]
+        end
+
+        subgraph S2["Retrieval Pipeline"]
+            direction TB
+            HR["Hybrid Retrieval<br/>HNSW vector + BM25 keyword"]
+            RRF["RRF Fusion<br/>reciprocal rank merge"]
+            RER["Cross-Encoder Rerank<br/>bge-reranker-large"]
+            DR["Definition Resolver<br/>pin authoritative definitions"]
+        end
+
+        subgraph S3["Grounded Generation"]
+            direction TB
+            EG{"Evidence Gate<br/>weighted coverage check"}
+            LLM["LLM Generation<br/>Ollama · Qwen2.5"]
+        end
+
+        subgraph S4["Quality & Output"]
+            direction TB
+            VER["Verification<br/>selective · cached · risk-based"]
+            ANS(["Final Answer<br/>cited · grounded"])
+        end
+
+        Q ==> QE
+        QE ==> HR
+        HR ==> RRF
+        RRF ==> RER
+        RER ==> DR
+        DR ==> EG
+        EG ==>|sufficient| LLM
+        EG ==>|insufficient| ANS
+        LLM ==> VER
+        VER ==> ANS
     end
 
-    subgraph S2["Retrieval Pipeline"]
-        direction TB
-        HR["Hybrid Retrieval<br/>HNSW vector + BM25 keyword"]
-        RRF["RRF Fusion<br/>reciprocal rank merge"]
-        RER["Cross-Encoder Rerank<br/>bge-reranker-large"]
-        DR["Definition Resolver<br/>pin authoritative definitions"]
-    end
+    linkStyle 0,1,2,3,4,5,6,7,8,9 stroke:#1E293B,stroke-width:4px,color:#1E293B
 
-    subgraph S3["Grounded Generation"]
-        direction TB
-        EG{"Evidence Gate<br/>weighted coverage check"}
-        LLM["LLM Generation<br/>Ollama · Qwen2.5"]
-    end
-
-    subgraph S4["Quality & Output"]
-        direction TB
-        VER["Verification<br/>selective · cached · risk-based"]
-        ANS(["Final Answer<br/>cited · grounded"])
-    end
-
-    Q --> QE
-    QE --> HR
-    HR --> RRF
-    RRF --> RER
-    RER --> DR
-    DR --> EG
-    EG -->|sufficient| LLM
-    EG -->|insufficient| ANS
-    LLM --> VER
-    VER --> ANS
+    style CANVAS fill:#FFFFFF,stroke:#CBD5E1,color:#334155,stroke-width:2px
 
     style Q fill:#4338CA,stroke:#3730A3,color:#FFFFFF,stroke-width:2px
     style ANS fill:#047857,stroke:#065F46,color:#FFFFFF,stroke-width:2px
 
-    style S1 fill:#F5F3FF,stroke:#A5B4FC,color:#312E81,stroke-width:1.5px
-    style S2 fill:#EFF6FF,stroke:#93C5FD,color:#1E3A5F,stroke-width:1.5px
-    style S3 fill:#ECFDF5,stroke:#6EE7B7,color:#064E3B,stroke-width:1.5px
-    style S4 fill:#FFFBEB,stroke:#FCD34D,color:#78350F,stroke-width:1.5px
+    style S1 fill:#EDE9FE,stroke:#8B5CF6,color:#312E81,stroke-width:2px
+    style S2 fill:#DBEAFE,stroke:#3B82F6,color:#1E3A5F,stroke-width:2px
+    style S3 fill:#D1FAE5,stroke:#10B981,color:#064E3B,stroke-width:2px
+    style S4 fill:#FEF3C7,stroke:#F59E0B,color:#78350F,stroke-width:2px
 
-    style QE fill:#FFFFFF,stroke:#6366F1,color:#312E81,stroke-width:1.5px
-    style HR fill:#FFFFFF,stroke:#3B82F6,color:#1E3A5F,stroke-width:1.5px
-    style RRF fill:#FFFFFF,stroke:#2563EB,color:#1E3A5F,stroke-width:1.5px
-    style RER fill:#FFFFFF,stroke:#1D4ED8,color:#1E3A5F,stroke-width:1.5px
-    style DR fill:#FFFFFF,stroke:#0EA5E9,color:#0C4A6E,stroke-width:1.5px
+    style QE fill:#DDD6FE,stroke:#6366F1,color:#312E81,stroke-width:2px
+    style HR fill:#BFDBFE,stroke:#2563EB,color:#1E3A5F,stroke-width:2px
+    style RRF fill:#93C5FD,stroke:#1D4ED8,color:#1E3A5F,stroke-width:2px
+    style RER fill:#7DD3FC,stroke:#0284C7,color:#0C4A6E,stroke-width:2px
+    style DR fill:#BAE6FD,stroke:#0EA5E9,color:#0C4A6E,stroke-width:2px
 
-    style EG fill:#FEF3C7,stroke:#D97706,color:#78350F,stroke-width:1.5px
-    style LLM fill:#FFFFFF,stroke:#059669,color:#064E3B,stroke-width:1.5px
+    style EG fill:#FDE68A,stroke:#D97706,color:#78350F,stroke-width:2px
+    style LLM fill:#A7F3D0,stroke:#059669,color:#064E3B,stroke-width:2px
 
-    style VER fill:#FFFFFF,stroke:#EA580C,color:#7C2D12,stroke-width:1.5px
+    style VER fill:#FED7AA,stroke:#EA580C,color:#7C2D12,stroke-width:2px
 ```
 
 | Stage | Implementation |
