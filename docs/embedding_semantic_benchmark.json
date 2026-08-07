@@ -1,0 +1,315 @@
+{
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "vector_mode": "L2-normalized (production \u2014 matches Chroma hnsw:space=cosine)",
+  "aggregate": {
+    "cases": 8,
+    "recall_at_1": 0.875,
+    "recall_at_3": 1.0,
+    "mrr": 0.9167,
+    "mean_gold_cosine": 0.5728,
+    "mean_distractor_cosine": 0.3992,
+    "mean_margin": 0.1735
+  },
+  "cases": [
+    {
+      "id": "cr3_fault_address",
+      "query": "Does CR3 store the faulting address during a page fault?",
+      "gold_ids": [
+        "cr2-fault"
+      ],
+      "best_gold_rank": 3,
+      "recall_at_1": false,
+      "recall_at_3": true,
+      "reciprocal_rank": 0.3333333333333333,
+      "gold_cosine_mean": 0.5141,
+      "distractor_cosine_mean": 0.5121,
+      "margin": 0.002,
+      "rankings": [
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.5564,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "pf-generic",
+          "cosine": 0.5172,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr2-fault",
+          "cosine": 0.5141,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr3-pdbr",
+          "cosine": 0.4626,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "cr0_pg_validation",
+      "query": "CR0.PG means Page Global Enable. Is this correct?",
+      "gold_ids": [
+        "cr0-pg",
+        "cr4-pge"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.6481,
+      "distractor_cosine_mean": 0.4315,
+      "margin": 0.2166,
+      "rankings": [
+        {
+          "chunk_id": "cr4-pge",
+          "cosine": 0.8133,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.5314,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr0-pg",
+          "cosine": 0.483,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr4-pae",
+          "cosine": 0.3316,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "cr2_pdbr_role",
+      "query": "Is CR2 the page-directory base register?",
+      "gold_ids": [
+        "cr3-pdbr"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.6909,
+      "distractor_cosine_mean": 0.4157,
+      "margin": 0.2752,
+      "rankings": [
+        {
+          "chunk_id": "cr3-pdbr",
+          "cosine": 0.6909,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr2-fault",
+          "cosine": 0.4561,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.4255,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr0-pg",
+          "cosine": 0.3656,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "compare_pg_pge",
+      "query": "Differentiate CR0.PG and CR4.PGE \u2014 what does each bit enable?",
+      "gold_ids": [
+        "cr0-pg",
+        "cr4-pge"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.5451,
+      "distractor_cosine_mean": 0.3587,
+      "margin": 0.1865,
+      "rankings": [
+        {
+          "chunk_id": "cr4-pge",
+          "cosine": 0.5594,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr4-pae",
+          "cosine": 0.5341,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr0-pg",
+          "cosine": 0.5309,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.3927,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "gp-generic",
+          "cosine": 0.1492,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "cr0_pg_definition",
+      "query": "What is the meaning of CR0.PG?",
+      "gold_ids": [
+        "cr0-pg"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.5505,
+      "distractor_cosine_mean": 0.4056,
+      "margin": 0.1448,
+      "rankings": [
+        {
+          "chunk_id": "cr0-pg",
+          "cosine": 0.5505,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr4-pge",
+          "cosine": 0.4616,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.4278,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr4-pae",
+          "cosine": 0.3275,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "nxe_gp_hallucination",
+      "query": "Does setting NXE always cause a #GP fault regardless of paging mode?",
+      "gold_ids": [
+        "nxe-def"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.467,
+      "distractor_cosine_mean": 0.318,
+      "margin": 0.149,
+      "rankings": [
+        {
+          "chunk_id": "nxe-def",
+          "cosine": 0.467,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "pf-generic",
+          "cosine": 0.3632,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.347,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "gp-generic",
+          "cosine": 0.2439,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "ia32e_transition",
+      "query": "Explain the sequence required to transition from real-address mode to IA-32e mode.",
+      "gold_ids": [
+        "ia32e-procedure"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.6289,
+      "distractor_cosine_mean": 0.3746,
+      "margin": 0.2543,
+      "rankings": [
+        {
+          "chunk_id": "ia32e-procedure",
+          "cosine": 0.6289,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "cr4-pae",
+          "cosine": 0.4597,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "real-mode-intro",
+          "cosine": 0.4061,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.3627,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr0-reset",
+          "cosine": 0.2698,
+          "is_gold": false
+        }
+      ]
+    },
+    {
+      "id": "cr0_reset_lookup",
+      "query": "What is the default value of CR0 when the processor is reset?",
+      "gold_ids": [
+        "cr0-reset"
+      ],
+      "best_gold_rank": 1,
+      "recall_at_1": true,
+      "recall_at_3": true,
+      "reciprocal_rank": 1.0,
+      "gold_cosine_mean": 0.5376,
+      "distractor_cosine_mean": 0.3777,
+      "margin": 0.1599,
+      "rankings": [
+        {
+          "chunk_id": "cr0-reset",
+          "cosine": 0.5376,
+          "is_gold": true
+        },
+        {
+          "chunk_id": "real-mode-intro",
+          "cosine": 0.5369,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "cr0-pg",
+          "cosine": 0.3351,
+          "is_gold": false
+        },
+        {
+          "chunk_id": "paging-overview",
+          "cosine": 0.2612,
+          "is_gold": false
+        }
+      ]
+    }
+  ]
+}
