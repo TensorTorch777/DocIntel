@@ -163,10 +163,16 @@ def _image_caption(data: bytes, filename: str) -> str:
         return f"[IMAGE] {filename}\n(Unable to read image metadata)"
 
 
-def extract_image(path: Path, data: bytes | None = None) -> ExtractedMedia:
+def extract_image(
+    path: Path,
+    data: bytes | None = None,
+    *,
+    display_name: str | None = None,
+) -> ExtractedMedia:
+    label = display_name or path.name
     payload = data if data is not None else path.read_bytes()
-    ocr_text, ocr_ok, engine = _ocr_image_bytes(payload, path.name)
-    caption = _image_caption(payload, path.name)
+    ocr_text, ocr_ok, engine = _ocr_image_bytes(payload, label)
+    caption = _image_caption(payload, label)
     body = caption
     notes: list[str] = []
     if ocr_text:
@@ -190,13 +196,14 @@ def extract_image(path: Path, data: bytes | None = None) -> ExtractedMedia:
     )
 
 
-def extract_audio(path: Path) -> ExtractedMedia:
+def extract_audio(path: Path, *, display_name: str | None = None) -> ExtractedMedia:
+    label = display_name or path.name
     result = with_temp_wav(path)
     notes: list[str] = []
     duration = result.duration_seconds
     if result.available and result.text:
         body = (
-            f"[VOICE NOTE] {path.name}\n"
+            f"[VOICE NOTE] {label}\n"
             f"Duration: {duration if duration is not None else 'unknown'} s\n"
             f"Engine: {result.engine}\n\n"
             f"Transcript:\n{result.text}"
@@ -205,7 +212,7 @@ def extract_audio(path: Path) -> ExtractedMedia:
         notes.append("Speech-to-text backend unavailable; indexed audio metadata.")
         dur_line = f"{duration} s" if duration is not None else "unknown"
         body = (
-            f"[VOICE NOTE] {path.name}\n"
+            f"[VOICE NOTE] {label}\n"
             f"Duration: {dur_line}\n"
             "Transcript unavailable. Configure Whisper or an STT backend, "
             "or type the question after attaching this note."
@@ -223,8 +230,10 @@ def extract_audio(path: Path) -> ExtractedMedia:
     )
 
 
-def extract_video(path: Path) -> ExtractedMedia:
+def extract_video(path: Path, *, display_name: str | None = None) -> ExtractedMedia:
     from app.services.transcription import extract_keyframes
+
+    label = display_name or path.name
 
     pages: list[PageText] = []
     notes: list[str] = []
@@ -237,7 +246,7 @@ def extract_video(path: Path) -> ExtractedMedia:
             PageText(
                 page_number=1,
                 text=(
-                    f"[VIDEO AUDIO] {path.name}\n"
+                    f"[VIDEO AUDIO] {label}\n"
                     f"Engine: {audio.engine}\n\n"
                     f"Soundtrack transcript:\n{audio.text}"
                 ),
@@ -259,7 +268,7 @@ def extract_video(path: Path) -> ExtractedMedia:
             pages.append(
                 PageText(
                     page_number=len(pages) + 1,
-                    text=f"[VIDEO FRAME {idx}] {path.name}\n{media.full_text}",
+                    text=f"[VIDEO FRAME {idx}] {label}\n{media.full_text}",
                 )
             )
 
@@ -268,7 +277,7 @@ def extract_video(path: Path) -> ExtractedMedia:
             PageText(
                 page_number=1,
                 text=(
-                    f"[VIDEO] {path.name}\n"
+                    f"[VIDEO] {label}\n"
                     "No frames or soundtrack could be extracted. Install ffmpeg "
                     "and Whisper for full video indexing."
                 ),
@@ -315,9 +324,9 @@ class MediaExtractor:
                 engine="pymupdf",
             )
         if kind == "image":
-            return extract_image(path, data=file_bytes)
+            return extract_image(path, data=file_bytes, display_name=name)
         if kind == "audio":
-            return extract_audio(path)
+            return extract_audio(path, display_name=name)
         if kind == "video":
-            return extract_video(path)
+            return extract_video(path, display_name=name)
         raise MediaParseError(f"Unsupported media kind '{kind}'")
