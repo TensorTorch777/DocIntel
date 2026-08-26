@@ -8,6 +8,7 @@ from app.services.chunking import ChunkingService
 from app.services.embedding import EmbeddingService
 from app.services.ingestion import IngestionService
 from app.services.llm import LLMService
+from app.services.media import MediaExtractor
 from app.services.pdf_extractor import PDFExtractor
 from app.services.rag import RAGService
 from app.services.reranker import RerankerService
@@ -20,6 +21,11 @@ def get_pdf_extractor() -> PDFExtractor:
     settings = get_settings()
     workers = settings.pdf_extraction_workers or 0
     return PDFExtractor(workers=workers)
+
+
+@lru_cache
+def get_media_extractor() -> MediaExtractor:
+    return MediaExtractor(get_pdf_extractor())
 
 
 @lru_cache
@@ -84,6 +90,7 @@ def get_ingestion_service() -> IngestionService:
         embedding_service=get_embedding_service(),
         vector_store=get_vector_store(),
         bm25_store=get_bm25_store(),
+        media_extractor=get_media_extractor(),
     )
 
 

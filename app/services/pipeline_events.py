@@ -7,6 +7,7 @@ from typing import Any
 
 PIPELINE_STAGES: tuple[tuple[str, str], ...] = (
     ("understanding_query", "Understanding Query"),
+    ("moe_routing", "MoE Expert Routing"),
     ("query_expansion", "Query Expansion"),
     ("vector_retrieval", "Vector Retrieval"),
     ("bm25_retrieval", "BM25 Retrieval"),

@@ -7,6 +7,20 @@ import { FileText, Loader2, Upload } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { uploadDocument } from "@/lib/api";
 
+const SUPPORTED_RE =
+  /\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|wav|mp3|m4a|aac|ogg|flac|webm|mp4|mov|mkv|avi|m4v)$/i;
+
+function isSupportedMedia(file: File): boolean {
+  if (SUPPORTED_RE.test(file.name)) return true;
+  const type = file.type || "";
+  return (
+    type === "application/pdf" ||
+    type.startsWith("image/") ||
+    type.startsWith("audio/") ||
+    type.startsWith("video/")
+  );
+}
+
 interface UploadZoneProps {
   onUploaded: (doc: StoredDocument) => void;
   compact?: boolean;
@@ -26,8 +40,8 @@ export function UploadZone({
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        setError("Only PDF files are supported");
+      if (!isSupportedMedia(file)) {
+        setError("Upload a PDF, image, voice note, or video");
         return;
       }
 
@@ -49,6 +63,7 @@ export function UploadZone({
           filename: result.filename,
           page_count: result.page_count,
           chunk_count: result.chunk_count,
+          modality: result.modality ?? "pdf",
           uploadedAt: new Date().toISOString(),
         });
       } catch (err) {
@@ -113,7 +128,7 @@ export function UploadZone({
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,image/*,audio/*,video/*,.wav,.m4a,.mp3,.webm,.mp4,.mov"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -162,14 +177,14 @@ export function UploadZone({
                 featured ? "text-heading" : "text-heading-sm"
               )}
             >
-              Upload a PDF
+              Upload a PDF, image, video, or voice note
             </p>
             <p className="mt-3 text-body text-slate lg:text-subheading">
-              Drop your manual here or click to browse
+              Drop a manual, screenshot, clip, or recording — or tap to browse
             </p>
             {featured && (
               <p className="mt-6 text-caption text-slate">
-                PDF only · up to hundreds of pages
+                PDF · images · video · voice notes
               </p>
             )}
           </div>

@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 const STAGE_ORDER = [
   "understanding_query",
+  "moe_routing",
   "query_expansion",
   "definition_resolution",
   "vector_retrieval",
@@ -34,6 +35,19 @@ function stageDetail(
   switch (stage.stage) {
     case "understanding_query":
       return d.intent ? `Intent: ${String(d.intent)}` : null;
+    case "moe_routing": {
+      if (stage.status === "skipped") return (d.reason as string) ?? "Skipped";
+      const primary = d.primary as string | undefined;
+      const experts = d.experts as { expert: string; weight: number }[] | undefined;
+      if (!primary) return null;
+      if (presentationMode) return `Primary: ${primary}`;
+      const rest =
+        experts
+          ?.slice(0, 3)
+          .map((e) => `${e.expert} ${(e.weight * 100).toFixed(0)}%`)
+          .join(" · ") ?? primary;
+      return rest;
+    }
     case "query_expansion": {
       const terms = d.expanded_terms as string[] | undefined;
       if (!terms?.length) return null;
