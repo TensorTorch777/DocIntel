@@ -81,6 +81,13 @@ const NODES: PipelineNode[] = [
     shape: "box",
   },
   {
+    id: "moe",
+    title: "MoE Router",
+    subtitle: "Sparse expert gating · text · vision · audio · video",
+    stageId: "understanding",
+    shape: "box",
+  },
+  {
     id: "hr",
     title: "Hybrid Retrieval",
     subtitle: "Vector + BM25 → RRF fusion",
@@ -141,6 +148,7 @@ const NODES: PipelineNode[] = [
 const MAIN_FLOW = [
   "query",
   "qe",
+  "moe",
   "hr",
   "rrf",
   "rer",
@@ -387,8 +395,10 @@ export function ArchitectureDiagram({ compact = false }: { compact?: boolean }) 
           highlighted={isPlaying && activeStageId === "understanding"}
         >
           {renderNode("qe")}
+          {renderConnector("qe")}
+          {renderNode("moe")}
         </StagePanel>
-        {renderConnector("qe")}
+        {renderConnector("moe")}
 
         <StagePanel
           stage={STAGE_BY_ID.retrieval}

@@ -20,6 +20,7 @@ from app.models.schemas import (
 )
 from app.services.answer_verification import AnswerVerificationService
 from app.services.claim_refutation import ClaimRefutation, detect_claim_refutation
+from app.services.moe import route_experts
 from app.services.llm import LLMService
 from app.services.pipeline_events import StageStatus, pipeline_event
 from app.services.procedural_reasoning import (
@@ -151,6 +152,8 @@ class RAGService:
         task: ChatTask = ChatTask.QA,
         top_k: int | None = None,
         debug: bool = False,
+        attachment_context: str | None = None,
+        attachment_modality: str | None = None,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Retrieve, generate, verify, optionally rewrite; yield SSE events."""
         import asyncio
@@ -171,21 +174,61 @@ class RAGService:
                 pipeline_event("understanding_query", StageStatus.RUNNING),
             )
             await asyncio.sleep(0)
-            intent_result = classify_query_intent(query)
+            intent_result = classify_query_intent(query or " ")
+            media_kind = (attachment_modality or "").strip().lower() or None
+            if not media_kind:
+                try:
+                    info = self._retrieval._vector_store.get_document_info(document_id)
+                    media_kind = str((info or {}).get("modality") or "pdf")
+                except Exception:
+                    media_kind = "pdf"
+            if not (query or "").strip() and attachment_context:
+                query = (
+                    f"Interpret the attached {media_kind} using the indexed document."
+                )
             understanding = pipeline_event(
                 "understanding_query",
                 StageStatus.COMPLETED,
                 detail={
                     "intent": intent_result.intent.value,
                     "pipeline": intent_result.pipeline.value,
+                    "media_kind": media_kind,
                 },
             )
             _track(understanding)
             yield ("pipeline", understanding)
 
+            moe = route_experts(
+                query,
+                media_kind=media_kind or "pdf",
+                has_attachment=bool(attachment_context),
+                intent=intent_result.intent,
+                top_k=self._settings.moe_top_k,
+            )
+            if self._settings.enable_moe_routing:
+                moe_event = pipeline_event(
+                    "moe_routing",
+                    StageStatus.COMPLETED,
+                    detail=moe.to_dict(),
+                )
+            else:
+                moe_event = pipeline_event(
+                    "moe_routing",
+                    StageStatus.SKIPPED,
+                    detail={"reason": "disabled"},
+                )
+            _track(moe_event)
+            yield ("pipeline", moe_event)
+
+            retrieval_query = query
+            if attachment_context:
+                retrieval_query = (
+                    f"{query}\n\n[Attached {media_kind} evidence]\n{attachment_context}"
+                )
+
             result = None
             async for kind, payload in self._retrieval.stream_retrieve(
-                document_id, query, top_k
+                document_id, retrieval_query, top_k
             ):
                 if kind == "pipeline":
                     _track(payload)
@@ -198,6 +241,11 @@ class RAGService:
 
             sources = result.sources
             context = result.context
+            if attachment_context:
+                context = (
+                    f"[ATTACHED {(media_kind or 'media').upper()} EVIDENCE]\n"
+                    f"{attachment_context}\n\n{context}"
+                )
             sufficiency = result.sufficiency
 
             yield ("sources", {"sources": [s.model_dump() for s in sources]})
@@ -235,6 +283,7 @@ class RAGService:
                     "retrieval_confidence": sufficiency.confidence,
                     "gated": True,
                     "pipeline": pipeline_snapshot,
+                    "moe": moe.to_dict() if self._settings.enable_moe_routing else None,
                 }
                 if debug:
                     done_payload["retrieval_debug"] = result.debug.to_dict()
@@ -336,6 +385,7 @@ class RAGService:
                 "evidence_sufficiency": sufficiency.model_dump(),
                 "retrieval_confidence": sufficiency.confidence,
                 "pipeline": pipeline_snapshot,
+                "moe": moe.to_dict() if self._settings.enable_moe_routing else None,
             }
             if verification:
                 done_payload["verification"] = verification.model_dump()

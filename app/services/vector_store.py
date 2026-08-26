@@ -196,6 +196,7 @@ class VectorStoreService:
             "filename": first_meta.get("filename", "unknown"),
             "page_count": first_meta.get("page_count", 0),
             "chunk_count": len(results["ids"]),
+            "modality": first_meta.get("modality", "pdf"),
         }
 
     def delete_document(self, document_id: str) -> None:

@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     enable_procedural_reasoning: bool = True
     procedural_max_steps: int = 10
     procedural_relevance_threshold: float = 0.08
+    enable_moe_routing: bool = True
+    moe_top_k: int = 2
     enable_register_definition_resolver: bool = True
     max_pinned_definition_chunks: int = 3
     definitional_boost_weight: float = 0.12

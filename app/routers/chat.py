@@ -48,6 +48,8 @@ async def chat(
             task=request.task,
             top_k=request.top_k,
             debug=request.debug,
+            attachment_context=request.attachment_context,
+            attachment_modality=request.attachment_modality,
         )
 
         return StreamingResponse(

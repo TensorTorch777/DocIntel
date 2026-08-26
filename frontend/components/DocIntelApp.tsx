@@ -17,10 +17,10 @@ const PAGE_X =
   "px-6 md:px-12 lg:px-16 xl:px-24 2xl:px-32";
 
 const FEATURES = [
+  "Mixture of Experts",
   "Hybrid retrieval",
-  "Cross-encoder rerank",
+  "Image · video · voice",
   "Evidence gating",
-  "Citation grounding",
 ] as const;
 
 const WORKFLOW = [
@@ -91,7 +91,7 @@ function DocIntelWorkspace() {
         <input
           ref={replaceInputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,image/*,audio/*,video/*"
           className="hidden"
           onChange={async (e) => {
             const file = e.target.files?.[0];
@@ -104,6 +104,7 @@ function DocIntelWorkspace() {
                 filename: result.filename,
                 page_count: result.page_count,
                 chunk_count: result.chunk_count,
+                modality: result.modality ?? "pdf",
                 uploadedAt: new Date().toISOString(),
               });
             } catch {
@@ -147,8 +148,8 @@ function DocIntelWorkspace() {
               Turn technical manuals into answers
             </h1>
             <p className="mt-8 text-subheading font-light leading-relaxed text-slate">
-              Upload a PDF, pick Q&amp;A, Summarize, or Anomalies — get grounded
-              answers with visible retrieval and citations.
+              Upload a PDF, screenshot, clip, or voice note — then ask in text
+              or from your mic. Answers stay grounded with visible retrieval.
             </p>
 
             <ul className="mt-10 flex flex-wrap gap-3">
@@ -185,8 +186,8 @@ function DocIntelWorkspace() {
 
             <div className="obsidian-glass mt-12 w-full p-card">
               <p className="text-body leading-relaxed text-slate">
-                Domain-aware technical Q&amp;A — hybrid retrieval, cross-encoder
-                reranking, and evidence gating built in.
+                Domain-aware technical Q&amp;A — MoE routing, hybrid retrieval,
+                and multimodal ingest for PDFs, images, video, and voice notes.
               </p>
             </div>
           </motion.div>
@@ -199,7 +200,7 @@ function DocIntelWorkspace() {
             className="flex h-full min-h-[420px] w-full flex-col justify-center lg:min-h-[min(72vh,720px)] lg:pl-4 xl:pl-8"
           >
             <div className="mb-6 flex items-baseline justify-between gap-4">
-              <p className="text-caption text-slate">Step 1 · Upload document</p>
+              <p className="text-caption text-slate">Step 1 · Upload media</p>
               {!apiOnline && (
                 <p className="text-caption text-accent">API offline</p>
               )}

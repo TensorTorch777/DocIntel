@@ -111,8 +111,10 @@ flowchart TB
 
 ## Features
 
+- **Mixture of Experts** — sparse softmax gate over retrieval, definition, verification, procedural, vision, audio, and video experts
 - **Hybrid retrieval** — vector + BM25 with RRF merge
 - **Cross-encoder reranking** — precision-focused top-k selection
+- **Multimodal ingest** — PDF, images (OCR), video keyframes, and voice notes (STT)
 - **Register definition resolver** — pins authoritative definition passages
 - **Evidence sufficiency gating** — abstains when coverage is insufficient
 - **Procedural reasoning** — query-aware step extraction and ordering
@@ -160,7 +162,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Open **http://localhost:3000** — upload a PDF, wait for indexing, then chat.
+Open **http://localhost:3000** — upload a PDF, image, video, or voice note, wait for indexing, then chat (text or mic).
 
 ---
 

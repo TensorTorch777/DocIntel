@@ -5,6 +5,10 @@ export interface UploadResponse {
   filename: string;
   page_count: number;
   chunk_count: number;
+  modality?: string;
+  duration_seconds?: number | null;
+  transcript_available?: boolean;
+  ocr_available?: boolean;
   message: string;
 }
 
@@ -13,10 +17,37 @@ export interface DocumentInfo {
   filename: string;
   page_count: number;
   chunk_count: number;
+  modality?: string;
 }
 
 export interface StoredDocument extends DocumentInfo {
   uploadedAt: string;
+}
+
+export interface MediaAnalyzeResponse {
+  filename: string;
+  modality: string;
+  text: string;
+  page_count: number;
+  duration_seconds?: number | null;
+  transcript_available: boolean;
+  ocr_available: boolean;
+  engine: string;
+  notes: string[];
+}
+
+export interface MoEExpertWeight {
+  expert: string;
+  weight: number;
+  label: string;
+}
+
+export interface MoEDecision {
+  primary: string;
+  top_k: number;
+  media_kind: string;
+  reasons: string[];
+  experts: MoEExpertWeight[];
 }
 
 export interface RetrievedSource {
@@ -94,6 +125,8 @@ export interface ChatRequest {
   task: ChatTask;
   top_k?: number;
   debug?: boolean;
+  attachment_context?: string | null;
+  attachment_modality?: string | null;
 }
 
 export interface AnomalyFlag {
@@ -144,4 +177,6 @@ export interface ChatMessage {
   evidenceSufficiency?: EvidenceSufficiency | null;
   revised?: boolean;
   pipeline?: MessagePipelineState;
+  attachment?: { filename: string; modality: string };
+  moe?: MoEDecision | null;
 }

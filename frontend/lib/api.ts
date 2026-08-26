@@ -3,6 +3,8 @@ import type {
   ChatRequest,
   DocumentInfo,
   EvidenceSufficiency,
+  MediaAnalyzeResponse,
+  MoEDecision,
   PipelineStageEvent,
   RetrievedSource,
   RetrievalDebug,
@@ -34,6 +36,18 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
   });
 
   return handleResponse<UploadResponse>(res);
+}
+
+export async function analyzeMedia(file: File): Promise<MediaAnalyzeResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_BASE}/media/analyze`, {
+    method: "POST",
+    body: form,
+  });
+
+  return handleResponse<MediaAnalyzeResponse>(res);
 }
 
 export async function getDocument(documentId: string): Promise<DocumentInfo> {
@@ -84,6 +98,7 @@ export function streamChat(
     retrieval_confidence?: string;
     gated?: boolean;
     pipeline?: PipelineStageEvent[];
+    moe?: MoEDecision | null;
   }) => void,
   onError: (message: string) => void
 ): () => void {
@@ -143,6 +158,7 @@ export function streamChat(
               retrieval_confidence?: string;
               gated?: boolean;
               pipeline?: PipelineStageEvent[];
+              moe?: MoEDecision | null;
               stage?: string;
               label?: string;
               status?: PipelineStageEvent["status"];
@@ -169,6 +185,7 @@ export function streamChat(
                 retrieval_confidence: parsed.retrieval_confidence,
                 gated: parsed.gated,
                 pipeline: parsed.pipeline,
+                moe: parsed.moe ?? null,
               });
             } else if (event === "error") {
               onError(parsed.message ?? "Stream error");

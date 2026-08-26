@@ -15,12 +15,16 @@ class ChatTask(str, Enum):
 
 
 class UploadResponse(BaseModel):
-    """Response after successful PDF upload and indexing."""
+    """Response after successful media upload and indexing."""
 
     document_id: str = Field(..., description="Unique identifier for the indexed document")
     filename: str
     page_count: int
     chunk_count: int
+    modality: str = Field(default="pdf", description="pdf | image | audio | video")
+    duration_seconds: float | None = None
+    transcript_available: bool = False
+    ocr_available: bool = False
     message: str = "Document indexed successfully"
 
 
@@ -31,18 +35,27 @@ class DocumentInfo(BaseModel):
     filename: str
     page_count: int
     chunk_count: int
+    modality: str = "pdf"
 
 
 class ChatRequest(BaseModel):
     """Request body for the streaming chat endpoint."""
 
     document_id: str = Field(..., description="ID of the indexed document to query")
-    query: str = Field(..., min_length=1, description="User query or instruction")
+    query: str = Field(default="", description="User query or instruction")
     task: ChatTask = Field(default=ChatTask.QA, description="RAG task to perform")
     top_k: int | None = Field(
         default=None, ge=1, le=20, description="Final chunks after reranking"
     )
     debug: bool = Field(default=False, description="Include retrieval debug metadata")
+    attachment_context: str | None = Field(
+        default=None,
+        description="OCR/transcript text from a chat-side image, video, or voice note",
+    )
+    attachment_modality: str | None = Field(
+        default=None,
+        description="image | audio | video when a chat attachment is present",
+    )
 
 
 class RetrievedSource(BaseModel):
@@ -183,6 +196,20 @@ class AnomalyResponse(BaseModel):
     flags: list[AnomalyFlag]
     raw_analysis: str | None = None
     sources: list[RetrievedSource] = Field(default_factory=list)
+
+
+class MediaAnalyzeResponse(BaseModel):
+    """Extracted text from a chat-side image, voice note, or video."""
+
+    filename: str
+    modality: str
+    text: str
+    page_count: int = 1
+    duration_seconds: float | None = None
+    transcript_available: bool = False
+    ocr_available: bool = False
+    engine: str = "none"
+    notes: list[str] = Field(default_factory=list)
 
 
 class SSEEvent(BaseModel):

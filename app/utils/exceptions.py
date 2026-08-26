@@ -19,6 +19,10 @@ class PDFParseError(DocIntelError):
     """Raised when PDF parsing fails."""
 
 
+class MediaParseError(DocIntelError):
+    """Raised when image, audio, or video parsing fails."""
+
+
 class DocumentNotFoundError(DocIntelError):
     """Raised when a document ID is not found in the vector store."""
 
@@ -32,6 +36,7 @@ def to_http_exception(exc: DocIntelError) -> HTTPException:
     status_map: dict[type[DocIntelError], int] = {
         EmptyDocumentError: status.HTTP_422_UNPROCESSABLE_ENTITY,
         PDFParseError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+        MediaParseError: status.HTTP_422_UNPROCESSABLE_ENTITY,
         DocumentNotFoundError: status.HTTP_404_NOT_FOUND,
         LLMTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
     }

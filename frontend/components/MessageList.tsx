@@ -27,8 +27,8 @@ export function MessageList({ messages, presentationMode = false }: MessageListP
           Ask your first question
         </p>
         <p className="mt-3 max-w-md text-caption text-slate">
-          Choose Q&amp;A, Summarize, or Anomalies above, then type your prompt
-          below.
+          Choose Q&amp;A, Summarize, or Anomalies — type, record a voice note,
+          or attach a screenshot.
         </p>
       </div>
     );
@@ -45,6 +45,11 @@ export function MessageList({ messages, presentationMode = false }: MessageListP
         >
           {msg.role === "user" ? (
             <div className="max-w-[85%] rounded-card bg-charcoal px-4 py-3 text-body text-ghost-ash shadow-inset">
+              {msg.attachment && (
+                <p className="mb-2 text-[11px] uppercase tracking-wide text-slate">
+                  Attached {msg.attachment.modality}: {msg.attachment.filename}
+                </p>
+              )}
               {msg.content}
             </div>
           ) : (

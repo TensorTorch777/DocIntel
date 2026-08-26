@@ -20,11 +20,21 @@ export function DocumentSummary({
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-charcoal px-6 py-3 md:px-12 lg:px-16 xl:px-24 2xl:px-32">
       <div className="min-w-0">
         <p className="truncate font-display text-body font-normal text-ghost-ash">
-          {document.filename.replace(/\.pdf$/i, "")}
+          {document.filename.replace(/\.(pdf|png|jpe?g|webp|gif|wav|m4a|mp3|mp4|mov|webm)$/i, "")}
         </p>
         <p className="text-caption text-slate">
-          {formatNumber(document.page_count)} pages ·{" "}
-          {formatNumber(document.chunk_count)} chunks
+          {document.modality && document.modality !== "pdf"
+            ? `${document.modality} · `
+            : ""}
+          {formatNumber(document.page_count)}{" "}
+          {document.modality === "audio"
+            ? "track"
+            : document.modality === "video"
+              ? "segments"
+              : document.modality === "image"
+                ? "image"
+                : "pages"}{" "}
+          · {formatNumber(document.chunk_count)} chunks
         </p>
       </div>
 
